@@ -43,55 +43,60 @@ const BOT_NAME_SUFFIXES = [
   'Speed', 'Blaster', 'Driver', 'Pro', 'Ace', 'Master', 'Champion', 'Prime', 'Surge', 'Viper',
 ];
 
-function generateBotRoster(count: number, playerUsername: string, playerCarId: string): (RacerVisualState & { targetWpm: number })[] {
-  const list: (RacerVisualState & { targetWpm: number })[] = [
-    {
-      userId: 'player_me',
-      username: playerUsername || 'You',
-      carId: playerCarId || 'car_cyber_phantom',
-      progressPercent: 0,
-      speed: 20,
-      nitroActive: false,
-      rankPosition: 1,
-      finished: false,
-      isCurrentPlayer: true,
-      targetWpm: 0,
-    },
-  ];
+function generateBotRoster(
+  count: number,
+  playerUsername: string,
+  playerCarId: string,
+  playerSlot: number = 1,
+): (RacerVisualState & { targetWpm: number })[] {
+  const list: (RacerVisualState & { targetWpm: number })[] = [];
+  const targetSlot = Math.max(1, Math.min(count, playerSlot));
 
-  for (let i = 1; i < count; i++) {
-    const pIndex = (i * 7 + 3) % BOT_NAME_PREFIXES.length;
-    const sIndex = (i * 11 + 5) % BOT_NAME_SUFFIXES.length;
-    const botName = `${BOT_NAME_PREFIXES[pIndex]}${BOT_NAME_SUFFIXES[sIndex]} #${i} [AI]`;
-    const carId = VEHICLE_CLASSES[i % VEHICLE_CLASSES.length];
-
-    // Calibrated speed distribution matching esports percentiles:
-    // Top 5% bots: 90 - 115 WPM
-    // Next 25% bots: 70 - 90 WPM
-    // Next 40% bots: 55 - 70 WPM
-    // Remaining bots: 38 - 55 WPM
-    let targetWpm: number;
-    if (i <= Math.max(1, Math.round(count * 0.05))) {
-      targetWpm = 90 + Math.floor(Math.random() * 25);
-    } else if (i <= Math.max(2, Math.round(count * 0.3))) {
-      targetWpm = 70 + Math.floor(Math.random() * 20);
-    } else if (i <= Math.max(3, Math.round(count * 0.7))) {
-      targetWpm = 55 + Math.floor(Math.random() * 15);
+  for (let slot = 1; slot <= count; slot++) {
+    if (slot === targetSlot) {
+      list.push({
+        userId: 'player_me',
+        username: playerUsername || 'You',
+        carId: playerCarId || 'car_cyber_phantom',
+        progressPercent: 0,
+        speed: 20,
+        nitroActive: false,
+        rankPosition: slot,
+        finished: false,
+        isCurrentPlayer: true,
+        targetWpm: 0,
+      });
     } else {
-      targetWpm = 38 + Math.floor(Math.random() * 17);
-    }
+      const botIdx = slot > targetSlot ? slot - 1 : slot;
+      const pIndex = (botIdx * 7 + 3) % BOT_NAME_PREFIXES.length;
+      const sIndex = (botIdx * 11 + 5) % BOT_NAME_SUFFIXES.length;
+      const botName = `${BOT_NAME_PREFIXES[pIndex]}${BOT_NAME_SUFFIXES[sIndex]} #${slot} [AI]`;
+      const carId = VEHICLE_CLASSES[botIdx % VEHICLE_CLASSES.length];
 
-    list.push({
-      userId: `bot_${i}`,
-      username: botName,
-      carId,
-      progressPercent: 0,
-      speed: 20,
-      nitroActive: false,
-      rankPosition: i + 1,
-      finished: false,
-      targetWpm,
-    });
+      // Calibrated speed distribution matching esports percentiles:
+      let targetWpm: number;
+      if (botIdx <= Math.max(1, Math.round(count * 0.05))) {
+        targetWpm = 90 + Math.floor(Math.random() * 25);
+      } else if (botIdx <= Math.max(2, Math.round(count * 0.3))) {
+        targetWpm = 70 + Math.floor(Math.random() * 20);
+      } else if (botIdx <= Math.max(3, Math.round(count * 0.7))) {
+        targetWpm = 55 + Math.floor(Math.random() * 15);
+      } else {
+        targetWpm = 38 + Math.floor(Math.random() * 17);
+      }
+
+      list.push({
+        userId: `bot_${slot}`,
+        username: botName,
+        carId,
+        progressPercent: 0,
+        speed: 20,
+        nitroActive: false,
+        rankPosition: slot,
+        finished: false,
+        targetWpm,
+      });
+    }
   }
 
   return list;
@@ -108,6 +113,9 @@ export default function PracticePage() {
   const [gridSize, setGridSize] = useState<number>(4);
   const [customGridInput, setCustomGridInput] = useState<string>('4');
   const [showCustomGrid, setShowCustomGrid] = useState<boolean>(false);
+
+  // Tournament / Event Grid Slot Serial (1 = Pole Position Row 0, up to 100)
+  const [playerStartingSlot, setPlayerStartingSlot] = useState<number>(1);
 
   // User session
   const [playerName, setPlayerName] = useState<string>('You');
@@ -128,7 +136,7 @@ export default function PracticePage() {
 
   // Dynamic Racers State
   const [racers, setRacers] = useState<(RacerVisualState & { targetWpm: number })[]>(() =>
-    generateBotRoster(4, 'You', 'car_cyber_phantom'),
+    generateBotRoster(4, 'You', 'car_cyber_phantom', 1),
   );
 
   // Load user session on mount
@@ -142,12 +150,12 @@ export default function PracticePage() {
     }
   }, []);
 
-  // Sync roster when gridSize changes (only when idle)
+  // Sync roster when gridSize or starting slot changes (only when idle)
   useEffect(() => {
     if (!raceStarted && countdown === null) {
-      setRacers(generateBotRoster(gridSize, playerName, playerCar));
+      setRacers(generateBotRoster(gridSize, playerName, playerCar, playerStartingSlot));
     }
-  }, [gridSize, playerName, playerCar]);
+  }, [gridSize, playerName, playerCar, playerStartingSlot]);
 
   // Load new passage with custom word count
   const loadPassage = async (lang: string = language, diff: string = difficulty, words: number = targetWordCount) => {
@@ -401,9 +409,9 @@ export default function PracticePage() {
           </div>
         </div>
 
-        {/* Configuration Row: Grid Size, Word Count, Language, Refresh Button */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
-          {/* 1. Grid Size (Number of Cars: 4, 8, 20, 50, 100) */}
+        {/* Configuration Row: Grid Size, Starting Slot, Word Count, Language & Refresh */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-1">
+          {/* 1. Grid Size (Number of Cars: 4, 8, 10, 20, 50, 100) */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
               <span className="font-bold text-text flex items-center space-x-1.5">
@@ -411,18 +419,19 @@ export default function PracticePage() {
                 <span>Starting Grid (Cars)</span>
               </span>
               <span className="font-mono text-[11px] font-bold text-accent">
-                {gridSize} Cars {gridSize === 100 && '🔥 100-Car Royale'}
+                {gridSize} Cars (10/Row)
               </span>
             </div>
 
-            <div className="flex items-center space-x-1.5">
-              {[4, 8, 20, 50, 100].map((count) => (
+            <div className="flex items-center space-x-1">
+              {[4, 8, 10, 20, 50, 100].map((count) => (
                 <button
                   key={count}
                   disabled={isRaceLocked}
                   onClick={() => {
                     setGridSize(count);
                     setShowCustomGrid(false);
+                    if (playerStartingSlot > count) setPlayerStartingSlot(count);
                   }}
                   className={`flex-1 py-1.5 rounded-lg text-xs font-mono font-bold transition border ${
                     gridSize === count && !showCustomGrid
@@ -463,6 +472,7 @@ export default function PracticePage() {
                     const parsed = parseInt(customGridInput, 10);
                     if (parsed >= 2 && parsed <= 100) {
                       setGridSize(parsed);
+                      if (playerStartingSlot > parsed) setPlayerStartingSlot(parsed);
                     }
                   }}
                   className="px-3 py-1 rounded-lg bg-primary text-white text-xs font-bold hover:bg-primary-hover"
@@ -473,7 +483,42 @@ export default function PracticePage() {
             )}
           </div>
 
-          {/* 2. Word Count Customization (25, 50, 100, 200, 300 words) */}
+          {/* 2. Tournament Starting Slot / Seed Serial */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-text flex items-center space-x-1.5">
+                <Flag className="h-3.5 w-3.5 text-accent" />
+                <span>Your Starting Slot</span>
+              </span>
+              <span className="font-mono text-[11px] font-bold text-emerald-400">
+                Slot #{playerStartingSlot} (Row {Math.floor((playerStartingSlot - 1) / Math.min(10, gridSize))})
+              </span>
+            </div>
+
+            <div className="flex items-center space-x-1">
+              {[
+                { label: 'Pole #1', slot: 1 },
+                { label: 'Row 0 #5', slot: Math.min(5, gridSize) },
+                { label: 'Row 1 #15', slot: Math.min(15, gridSize) },
+                { label: 'Back', slot: gridSize },
+              ].map((item, idx) => (
+                <button
+                  key={idx}
+                  disabled={isRaceLocked}
+                  onClick={() => setPlayerStartingSlot(item.slot)}
+                  className={`flex-1 py-1.5 rounded-lg text-[11px] font-mono font-bold transition border ${
+                    playerStartingSlot === item.slot
+                      ? 'bg-accent/25 border-accent text-accent shadow-md shadow-accent/20'
+                      : 'bg-surface-dark border-white/10 text-text-muted hover:border-white/20 hover:text-white'
+                  } ${isRaceLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 3. Word Count Customization (25, 50, 100, 200, 300 words) */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
               <span className="font-bold text-text flex items-center space-x-1.5">
@@ -485,7 +530,7 @@ export default function PracticePage() {
               </span>
             </div>
 
-            <div className="flex items-center space-x-1.5">
+            <div className="flex items-center space-x-1">
               {[25, 50, 100, 200, 300].map((words) => (
                 <button
                   key={words}
