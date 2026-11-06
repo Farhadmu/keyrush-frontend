@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { getCurrentUser, clearAuthSession, UserSession } from '../lib/api';
 import { getUserRole, AppRole } from '../lib/roleGuard';
+import CommandPalette from './CommandPalette';
+import NotificationCenter from './NotificationCenter';
 import {
   Trophy,
   Users,
@@ -21,12 +23,16 @@ import {
   Sparkles,
   Award,
   Layers,
+  Search,
+  Command,
 } from 'lucide-react';
 
 export default function Navbar() {
   const pathname = usePathname();
   const [user, setUser] = useState<UserSession | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
 
   useEffect(() => {
     setUser(getCurrentUser());
@@ -119,6 +125,31 @@ export default function Navbar() {
 
         {/* User Account Controls */}
         <div className="flex items-center space-x-2 sm:space-x-3">
+          {/* Quick Search / Command Palette Pill */}
+          <button
+            onClick={() => setCommandPaletteOpen(true)}
+            className="hidden md:flex items-center space-x-2 px-2.5 py-1.5 rounded-lg border border-white/10 bg-surface text-text-muted hover:text-text hover:border-white/20 transition-all text-xs"
+            title="Press Cmd+K to search"
+          >
+            <Search className="h-3.5 w-3.5 text-accent" />
+            <span className="text-[11px] font-mono">Search</span>
+            <kbd className="px-1.5 py-0.5 rounded bg-surface-light text-[9px] font-mono text-text-muted border border-white/10">
+              ⌘K
+            </kbd>
+          </button>
+
+          {/* Real-time Notification Bell */}
+          {user && (
+            <button
+              onClick={() => setNotificationCenterOpen(true)}
+              className="relative p-2 rounded-lg border border-white/10 bg-surface text-text-muted hover:text-text hover:border-white/20 transition-all"
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-accent animate-pulse" />
+            </button>
+          )}
+
           {user ? (
             <div className="flex items-center space-x-2 sm:space-x-3">
               <Link
@@ -222,6 +253,16 @@ export default function Navbar() {
           )}
         </div>
       )}
+
+      {/* Global Modals & Drawers */}
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+      />
+      <NotificationCenter
+        isOpen={notificationCenterOpen}
+        onClose={() => setNotificationCenterOpen(false)}
+      />
     </header>
   );
 }

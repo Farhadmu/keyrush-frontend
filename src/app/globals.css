@@ -5,23 +5,25 @@
 @tailwind utilities;
 
 :root {
-  --background: #080D19;
-  --surface: #111827;
+  --background: #070A12;
+  --surface: #101625;
+  --surface-light: #151D2D;
   --primary: #3B82F6;
   --secondary: #8B5CF6;
-  --accent: #06B6D4;
-  --text: #F8FAFC;
+  --accent: #55E6F2;
+  --text: #F5F7FC;
+  --text-muted: #9BA8BC;
 }
 
 body {
-  background-color: #080D19;
-  color: #F8FAFC;
+  background-color: #070A12;
+  color: #F5F7FC;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   overflow-x: hidden;
   background-image: 
-    radial-gradient(ellipse at 50% 0%, rgba(59, 130, 246, 0.15) 0%, transparent 60%),
-    radial-gradient(ellipse at 80% 50%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
-    radial-gradient(ellipse at 20% 80%, rgba(6, 182, 212, 0.08) 0%, transparent 50%);
+    radial-gradient(ellipse at 50% 0%, rgba(59, 130, 246, 0.12) 0%, transparent 60%),
+    radial-gradient(ellipse at 85% 45%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 15% 75%, rgba(85, 230, 242, 0.06) 0%, transparent 50%);
   background-attachment: fixed;
 }
 
