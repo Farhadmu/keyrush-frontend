@@ -155,11 +155,16 @@ export default function MultiplayerPage() {
     socket.emit('race:ready', { roomId: activeRoom.roomId, isReady: nextReady });
   };
 
+  const seqRef = React.useRef(1);
+
   const handleTypingProgress = (data: any) => {
     if (!activeRoom || !raceStarted) return;
     const socket = getRacingSocket();
     socket.emit('race:typing', {
       roomId: activeRoom.roomId,
+      textBuffer: data.textBuffer,
+      sequenceNumber: seqRef.current++,
+      clientTimestamp: Date.now(),
       typedIndex: data.typedIndex,
       errorCount: data.errorCount,
       rawInputCount: data.rawInputs,

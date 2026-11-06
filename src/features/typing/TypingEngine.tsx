@@ -12,6 +12,7 @@ interface TypingEngineProps {
   raceStarted: boolean;
   disabled?: boolean;
   onProgress?: (data: {
+    textBuffer: string;
     typedIndex: number;
     errorCount: number;
     rawInputs: number;
@@ -136,6 +137,7 @@ export default function TypingEngine({
     }
 
     onProgress?.({
+      textBuffer: val,
       typedIndex: currentLength,
       errorCount: newErrors.length,
       rawInputs: newTotalInputs,
