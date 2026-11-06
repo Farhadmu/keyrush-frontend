@@ -1,12 +1,27 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import * as THREE from 'three';
 import { VehicleFactory } from './VehicleFactory';
 import { TrackFactory, TrackTheme } from './TrackFactory';
 import RacingCanvas, { RacerVisualState } from '../RacingCanvas';
-import { Camera, Eye, Video, Sparkles, Layers, Sliders } from 'lucide-react';
+import {
+  Camera,
+  Eye,
+  Video,
+  Sparkles,
+  Layers,
+  Sliders,
+  Flag,
+  Gauge,
+  Flame,
+  Zap,
+  TrendingUp,
+  Settings2,
+} from 'lucide-react';
 import confetti from 'canvas-confetti';
+
+export type GraphicsQuality = 'low' | 'medium' | 'high';
 
 export interface ThreeArenaProps {
   racers: RacerVisualState[];
@@ -33,6 +48,11 @@ export default function ThreeArena({
   const [cameraMode, setCameraMode] = useState<'chase' | 'hood' | 'orbit'>(initialCameraMode);
   const [selectedTheme, setSelectedTheme] = useState<TrackTheme>(trackTheme);
   const [activeSpectatingId, setActiveSpectatingId] = useState<string | null>(spectatingUserId || null);
+  const [graphicsQuality, setGraphicsQuality] = useState<GraphicsQuality>('high');
+
+  // Overtake notification state
+  const prevRankRef = useRef<number | null>(null);
+  const [overtakeNotice, setOvertakeNotice] = useState<string | null>(null);
 
   // References for Three.js lifecycle
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -41,6 +61,7 @@ export default function ThreeArena({
   const trackGroupRef = useRef<THREE.Group | null>(null);
   const carMeshesRef = useRef<Map<string, THREE.Group>>(new Map());
   const racerPositionsRef = useRef<Map<string, { currentZ: number; currentX: number }>>(new Map());
+  const speedLinesMeshRef = useRef<THREE.LineSegments | null>(null);
   const finishedTriggeredRef = useRef<boolean>(false);
 
   // Detect WebGL
@@ -62,31 +83,34 @@ export default function ThreeArena({
     if (!webGlAvailable || useFallback2D || !mountRef.current) return;
 
     const width = mountRef.current.clientWidth;
-    const height = mountRef.current.clientHeight || 420;
+    const height = mountRef.current.clientHeight || 440;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#080D19');
-    scene.fog = new THREE.FogExp2('#080D19', 0.015);
+    scene.fog = new THREE.FogExp2('#080D19', 0.012);
     sceneRef.current = scene;
 
-    const camera = new THREE.PerspectiveCamera(55, width / height, 0.1, 400);
+    const camera = new THREE.PerspectiveCamera(54, width / height, 0.1, 450);
     camera.position.set(0, 3, -8);
     cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    const renderer = new THREE.WebGLRenderer({
+      antialias: graphicsQuality !== 'low',
+      powerPreference: 'high-performance',
+    });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
+    renderer.setPixelRatio(graphicsQuality === 'high' ? Math.min(window.devicePixelRatio, 2) : 1);
+    renderer.shadowMap.enabled = graphicsQuality === 'high';
     rendererRef.current = renderer;
 
     mountRef.current.appendChild(renderer.domElement);
 
     // Studio & Track Lights
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
     scene.add(ambientLight);
 
     const sunLight = new THREE.DirectionalLight(0xffffff, 1.4);
-    sunLight.position.set(10, 20, 10);
+    sunLight.position.set(10, 22, 10);
     scene.add(sunLight);
 
     const cyanNeon = new THREE.DirectionalLight(0x06b6d4, 0.8);
@@ -97,7 +121,7 @@ export default function ThreeArena({
     purpleNeon.position.set(15, 8, 20);
     scene.add(purpleNeon);
 
-    // Build Track Mesh
+    // Build Track Mesh with Multi-Row Grid & Scrolling Asphalt Texture
     const numLanes = racers.length <= 4 ? 4 : racers.length <= 12 ? 6 : racers.length <= 40 ? 8 : 10;
     const track = TrackFactory.createTrack({
       theme: selectedTheme,
@@ -107,15 +131,65 @@ export default function ThreeArena({
     scene.add(track);
     trackGroupRef.current = track;
 
+    // Optical Speed Streaks System (High-Velocity Forward Motion)
+    const streakCount = graphicsQuality === 'low' ? 0 : graphicsQuality === 'medium' ? 120 : 250;
+    let streakGeometry: THREE.BufferGeometry | null = null;
+    let streakMat: THREE.LineBasicMaterial | null = null;
+
+    if (streakCount > 0) {
+      streakGeometry = new THREE.BufferGeometry();
+      const streakPositions = new Float32Array(streakCount * 6);
+      const streakColors = new Float32Array(streakCount * 6);
+
+      for (let i = 0; i < streakCount; i++) {
+        const x = (Math.random() - 0.5) * 22;
+        const y = 0.4 + Math.random() * 5.0;
+        const z = Math.random() * 100;
+        const len = 1.5 + Math.random() * 3.5;
+
+        streakPositions[i * 6 + 0] = x;
+        streakPositions[i * 6 + 1] = y;
+        streakPositions[i * 6 + 2] = z;
+        streakPositions[i * 6 + 3] = x;
+        streakPositions[i * 6 + 4] = y;
+        streakPositions[i * 6 + 5] = z + len;
+
+        const isCyan = Math.random() > 0.35;
+        const color = isCyan ? new THREE.Color(0x00f0ff) : new THREE.Color(0x8b5cf6);
+        streakColors[i * 6 + 0] = color.r;
+        streakColors[i * 6 + 1] = color.g;
+        streakColors[i * 6 + 2] = color.b;
+        streakColors[i * 6 + 3] = color.r * 0.3;
+        streakColors[i * 6 + 4] = color.g * 0.3;
+        streakColors[i * 6 + 5] = color.b * 0.3;
+      }
+
+      streakGeometry.setAttribute('position', new THREE.BufferAttribute(streakPositions, 3));
+      streakGeometry.setAttribute('color', new THREE.BufferAttribute(streakColors, 3));
+
+      streakMat = new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+
+      const speedLines = new THREE.LineSegments(streakGeometry, streakMat);
+      scene.add(speedLines);
+      speedLinesMeshRef.current = speedLines;
+    }
+
     // Animation Loop
     let animId: number;
-    let clock = new THREE.Clock();
+    const clock = new THREE.Clock();
 
     const animate = () => {
       animId = requestAnimationFrame(animate);
-      const delta = clock.getDelta();
+      const delta = Math.min(0.1, clock.getDelta());
+      const elapsedTime = clock.getElapsedTime();
 
-      // Find current focus racer (either spectated racer or current player)
+      // Find current focus racer (either spectated racer or authenticated player)
       const targetRacer =
         racers.find((r) => r.userId === activeSpectatingId) ||
         racers.find((r) => r.isCurrentPlayer) ||
@@ -140,6 +214,22 @@ export default function ThreeArena({
           carGroup = VehicleFactory.createVehicle(racer.carId);
           scene.add(carGroup);
           carMeshesRef.current.set(racer.userId, carGroup);
+          VehicleFactory.attachPlayerIdentity(
+            carGroup,
+            !!racer.isCurrentPlayer,
+            racer.username,
+            racer.rankPosition,
+          );
+        }
+
+        // Keep identity synchronized in case props update
+        if (carGroup.userData.isCurrentPlayer !== !!racer.isCurrentPlayer) {
+          VehicleFactory.attachPlayerIdentity(
+            carGroup,
+            !!racer.isCurrentPlayer,
+            racer.username,
+            racer.rankPosition,
+          );
         }
 
         const gridPos = TrackFactory.getGridPosition(
@@ -156,29 +246,89 @@ export default function ThreeArena({
         }
 
         // Smooth position lerp
-        const distanceDelta = (gridPos.z - currentPos.currentZ) * 0.12;
+        const distanceDelta = (gridPos.z - currentPos.currentZ) * 0.16;
+        const lateralDelta = (gridPos.x - currentPos.currentX) * 0.12;
         currentPos.currentZ += distanceDelta;
-        currentPos.currentX += (gridPos.x - currentPos.currentX) * 0.1;
+        currentPos.currentX += lateralDelta;
 
         carGroup.position.set(currentPos.currentX, 0, currentPos.currentZ);
 
-        // Spin wheels based on speed
-        VehicleFactory.rotateWheels(carGroup, Math.max(distanceDelta, racer.speed * 0.003));
+        // Steering angle & Chassis roll on turn
+        VehicleFactory.setSteeringAngle(carGroup, THREE.MathUtils.clamp(-lateralDelta * 2.5, -0.35, 0.35));
+        carGroup.rotation.z = THREE.MathUtils.clamp(-lateralDelta * 0.8, -0.15, 0.15);
+
+        // Dynamics: Continuous wheel rotation strictly proportional to km/h speed + suspension pitch
+        const accel = distanceDelta * 80;
+        VehicleFactory.updateVehicleDynamics(carGroup, racer.speed, accel, delta, elapsedTime);
+
+        // Player identity animation: bobbing chevron & pulsing aura
+        VehicleFactory.updatePlayerIdentity(carGroup, elapsedTime);
 
         // Nitro exhaust flare
-        VehicleFactory.setVehicleNitro(carGroup, racer.nitroActive, racer.nitroActive ? 1.4 : 0);
+        VehicleFactory.setVehicleNitro(carGroup, racer.nitroActive, racer.nitroActive ? 1.5 : 0);
 
         if (racer.userId === targetRacer?.userId) {
           targetPos.set(currentPos.currentX, 0.4, currentPos.currentZ);
         }
       });
 
-      // Update Camera based on mode
+      // Update Road Surface Motion (Scrolling asphalt grain & side rumble strips)
+      if (trackGroupRef.current) {
+        TrackFactory.updateTrackMotion(trackGroupRef.current, targetPos.z);
+      }
+
+      // Update Optical Speed Streaks (Motion Lines rushing toward camera)
+      if (streakGeometry && streakMat && streakCount > 0) {
+        const speedKmh = targetRacer?.speed || 20;
+        const isNitro = targetRacer?.nitroActive || false;
+        const speedFactor = Math.min(1.6, speedKmh / 90);
+
+        // Fade in streaks with speed
+        streakMat.opacity = THREE.MathUtils.lerp(
+          streakMat.opacity,
+          speedKmh > 25 ? (isNitro ? 0.95 : Math.min(0.75, speedFactor * 0.65)) : 0,
+          0.1,
+        );
+
+        const posAttr = streakGeometry.attributes.position;
+        const posArr = posAttr.array as Float32Array;
+        const streakSpeed = Math.max(20, speedKmh * 0.9) * delta;
+
+        for (let i = 0; i < streakCount; i++) {
+          posArr[i * 6 + 2] -= streakSpeed;
+          posArr[i * 6 + 5] -= streakSpeed;
+
+          // If passed behind camera, recycle ahead
+          if (posArr[i * 6 + 5] < camera.position.z - 5) {
+            const newX = targetPos.x + (Math.random() - 0.5) * 18;
+            const newY = 0.4 + Math.random() * 4.5;
+            const newZ = targetPos.z + 45 + Math.random() * 45;
+            const len = (isNitro ? 4.5 : 1.8) + Math.random() * 3.0;
+
+            posArr[i * 6 + 0] = newX;
+            posArr[i * 6 + 1] = newY;
+            posArr[i * 6 + 2] = newZ;
+            posArr[i * 6 + 3] = newX;
+            posArr[i * 6 + 4] = newY;
+            posArr[i * 6 + 5] = newZ + len;
+          }
+        }
+        posAttr.needsUpdate = true;
+      }
+
+      // Update Camera based on mode & speed acceleration response
       if (camera) {
+        const speed = targetRacer?.speed || 20;
+        const isNitro = targetRacer?.nitroActive || false;
+        const speedRatio = Math.min(1.5, speed / 100);
+
         if (cameraMode === 'hood') {
-          camera.position.set(targetPos.x, targetPos.y + 0.85, targetPos.z + 0.5);
-          camera.lookAt(targetPos.x, targetPos.y + 0.85, targetPos.z + 50);
-          camera.fov = targetRacer?.nitroActive ? 65 : 55;
+          camera.position.set(targetPos.x, targetPos.y + 0.82, targetPos.z + 0.6);
+          camera.lookAt(targetPos.x, targetPos.y + 0.82, targetPos.z + 50);
+
+          // Hood camera dynamic FOV
+          const targetFov = isNitro ? 72 : 55 + speedRatio * 10;
+          camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.08);
           camera.updateProjectionMatrix();
         } else if (cameraMode === 'orbit') {
           const orbitAngle = Date.now() * 0.001;
@@ -189,22 +339,36 @@ export default function ThreeArena({
           );
           camera.lookAt(targetPos.x, targetPos.y + 0.5, targetPos.z);
         } else {
-          // 'chase' mode
-          const idealCamX = targetPos.x * 0.8;
-          const idealCamY = targetPos.y + 2.5;
-          const idealCamZ = targetPos.z - 6.2;
+          // 'chase' mode with speed-lag spring and acceleration response
+          const chaseDistance = 6.2 + speedRatio * 1.5;
+          const chaseHeight = 2.4 + speedRatio * 0.4;
 
-          camera.position.x += (idealCamX - camera.position.x) * 0.08;
-          camera.position.y += (idealCamY - camera.position.y) * 0.08;
-          camera.position.z += (idealCamZ - camera.position.z) * 0.1;
+          const idealCamX = targetPos.x * 0.85;
+          const idealCamY = targetPos.y + chaseHeight;
+          const idealCamZ = targetPos.z - chaseDistance;
 
-          camera.lookAt(targetPos.x, targetPos.y + 0.6, targetPos.z + 12);
-          camera.fov = targetRacer?.nitroActive ? 68 : 55;
+          // Smooth elastic follow
+          camera.position.x += (idealCamX - camera.position.x) * 0.09;
+          camera.position.y += (idealCamY - camera.position.y) * 0.09;
+          camera.position.z += (idealCamZ - camera.position.z) * 0.12;
+
+          // High-speed & Nitro Camera Vibration/Shake
+          if (speed > 55 || isNitro) {
+            const shakeMag = (isNitro ? 0.06 : 0.018) * Math.min(1.5, speed / 80);
+            camera.position.x += (Math.random() - 0.5) * shakeMag;
+            camera.position.y += (Math.random() - 0.5) * shakeMag;
+          }
+
+          camera.lookAt(targetPos.x, targetPos.y + 0.6, targetPos.z + 14);
+
+          // Dynamic FOV expansion: 54 at idle up to 68 at high speed, 75 during Nitro!
+          const targetFov = 54 + Math.min(16, speedRatio * 14) + (isNitro ? 8 : 0);
+          camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.08);
           camera.updateProjectionMatrix();
         }
 
-        // Keep sunlight centered near active car
-        sunLight.position.set(targetPos.x + 10, 20, targetPos.z + 10);
+        // Keep directional sunlight centered near car
+        sunLight.position.set(targetPos.x + 10, 22, targetPos.z + 10);
       }
 
       renderer.render(scene, camera);
@@ -215,7 +379,7 @@ export default function ThreeArena({
     const handleResize = () => {
       if (!mountRef.current || !renderer || !camera) return;
       const w = mountRef.current.clientWidth;
-      const h = mountRef.current.clientHeight || 420;
+      const h = mountRef.current.clientHeight || 440;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
@@ -231,13 +395,18 @@ export default function ThreeArena({
       renderer.dispose();
       carMeshesRef.current.clear();
       racerPositionsRef.current.clear();
+      if (speedLinesMeshRef.current) {
+        speedLinesMeshRef.current.geometry.dispose();
+      }
     };
-  }, [webGlAvailable, useFallback2D, selectedTheme, trackLength, Math.min(racers.length, 10)]);
+  }, [webGlAvailable, useFallback2D, selectedTheme, trackLength, Math.min(racers.length, 10), graphicsQuality]);
 
   // Reset finish celebration on new race
   useEffect(() => {
     if (racers.every((r) => r.progressPercent === 0)) {
       finishedTriggeredRef.current = false;
+      prevRankRef.current = null;
+      setOvertakeNotice(null);
     }
   }, [racers]);
 
@@ -247,15 +416,52 @@ export default function ThreeArena({
     if (me && me.finished && !finishedTriggeredRef.current) {
       finishedTriggeredRef.current = true;
       confetti({
-        particleCount: 120,
-        spread: 70,
+        particleCount: 140,
+        spread: 80,
         origin: { y: 0.6 },
       });
       if (onFinishCinematic) onFinishCinematic();
     }
   }, [racers, onFinishCinematic]);
 
-  // If WebGL is not available or user selected 2D mode, render 2D canvas fallback
+  const currentPlayer = racers.find((r) => r.isCurrentPlayer);
+
+  // Monitor overtake feedback
+  useEffect(() => {
+    if (!currentPlayer || !raceStarted) return;
+    const currentRank = currentPlayer.rankPosition || 1;
+    if (prevRankRef.current !== null && currentRank < prevRankRef.current) {
+      const diff = prevRankRef.current - currentRank;
+      setOvertakeNotice(`▲ OVERTAKE! +${diff} POS (#${currentRank})`);
+      const timer = setTimeout(() => setOvertakeNotice(null), 2500);
+      return () => clearTimeout(timer);
+    }
+    prevRankRef.current = currentRank;
+  }, [currentPlayer?.rankPosition, raceStarted]);
+
+  // Sorted racers for mini-leaderboard
+  const sortedRacers = useMemo(() => {
+    return [...racers].sort((a, b) => (a.rankPosition || 999) - (b.rankPosition || 999));
+  }, [racers]);
+
+  const topRacers = sortedRacers.slice(0, 8);
+  const playerInTop = currentPlayer && topRacers.some((r) => r.userId === currentPlayer.userId);
+  const displayRacers = playerInTop || !currentPlayer ? topRacers : [...topRacers, currentPlayer];
+
+  // Visual Speedometer needle angle & color state
+  const speed = currentPlayer?.speed || 20;
+  const isNitro = currentPlayer?.nitroActive || false;
+  const speedClamped = Math.min(220, Math.max(0, speed));
+  const speedPercentage = Math.min(100, Math.round((speedClamped / 200) * 100));
+
+  const speedState = useMemo(() => {
+    if (isNitro) return { label: 'HYPER NITRO', color: 'text-amber-400', border: 'border-amber-400/60', bg: 'bg-amber-500/20' };
+    if (speed >= 100) return { label: 'TOP VELOCITY', color: 'text-fuchsia-400', border: 'border-fuchsia-400/60', bg: 'bg-fuchsia-500/20' };
+    if (speed >= 60) return { label: 'FAST ACCEL', color: 'text-accent', border: 'border-accent/60', bg: 'bg-accent/20' };
+    if (speed >= 30) return { label: 'CRUISING', color: 'text-emerald-400', border: 'border-emerald-400/60', bg: 'bg-emerald-500/20' };
+    return { label: 'IDLE / REV', color: 'text-text-muted', border: 'border-white/10', bg: 'bg-white/5' };
+  }, [speed, isNitro]);
+
   if (!webGlAvailable || useFallback2D) {
     return (
       <div className="space-y-2">
@@ -275,18 +481,10 @@ export default function ThreeArena({
     );
   }
 
-  const currentPlayer = racers.find((r) => r.isCurrentPlayer);
-
-  // Filter racers for the bottom strip (top 8 + current player)
-  const sortedRacers = [...racers].sort((a, b) => (a.rankPosition || 999) - (b.rankPosition || 999));
-  const topRacers = sortedRacers.slice(0, 8);
-  const playerInTop = currentPlayer && topRacers.some((r) => r.userId === currentPlayer.userId);
-  const displayRacers = playerInTop || !currentPlayer ? topRacers : [...topRacers, currentPlayer];
-
   return (
-    <div className="relative w-full rounded-2xl border border-white/10 bg-surface/90 overflow-hidden shadow-2xl backdrop-blur-xl flex flex-col">
-      {/* 3D Arena Control HUD Header */}
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-2.5 bg-background/80 backdrop-blur-md z-10">
+    <div className="relative w-full rounded-2xl border border-white/10 bg-surface/90 overflow-hidden shadow-2xl backdrop-blur-xl flex flex-col select-none">
+      {/* 3D Arena Control Header */}
+      <div className="flex items-center justify-between border-b border-white/10 px-4 py-2 bg-background/90 backdrop-blur-md z-10">
         <div className="flex items-center space-x-3">
           <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-accent/15 border border-accent/30 text-accent text-xs font-mono font-bold tracking-wider uppercase">
             <span className="w-2 h-2 rounded-full bg-accent animate-ping" />
@@ -298,20 +496,35 @@ export default function ThreeArena({
               Grid: {racers.length} Cars
             </span>
             {currentPlayer && (
-              <>
-                <span className="text-text-muted">| Rank:</span>
-                <span className="font-bold text-white">#{currentPlayer.rankPosition} of {racers.length}</span>
-                <span className="text-text-muted">| Speed:</span>
-                <span className="font-bold text-accent">{currentPlayer.speed} km/h</span>
-              </>
+              <span className="font-bold text-white">
+                #{currentPlayer.rankPosition} of {racers.length}
+              </span>
             )}
           </div>
         </div>
 
-        {/* View Controls */}
+        {/* View Controls & Graphics Quality */}
         <div className="flex items-center space-x-2">
+          {/* Graphics Quality Toggle */}
+          <div className="hidden md:flex items-center p-0.5 rounded-lg bg-surface-dark border border-white/5 text-[11px] font-mono">
+            {(['low', 'medium', 'high'] as GraphicsQuality[]).map((q) => (
+              <button
+                key={q}
+                onClick={() => setGraphicsQuality(q)}
+                className={`px-2 py-0.5 rounded capitalize transition ${
+                  graphicsQuality === q
+                    ? 'bg-primary text-white font-bold'
+                    : 'text-text-muted hover:text-white'
+                }`}
+                title={`Graphics Quality: ${q}`}
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+
           {/* Camera Selector */}
-          <div className="flex items-center p-1 rounded-xl bg-surface-dark border border-white/5 text-xs font-medium">
+          <div className="flex items-center p-0.5 rounded-xl bg-surface-dark border border-white/5 text-xs font-medium">
             <button
               onClick={() => setCameraMode('chase')}
               className={`px-2.5 py-1 rounded-lg transition flex items-center space-x-1 ${
@@ -367,11 +580,132 @@ export default function ThreeArena({
         </div>
       </div>
 
-      {/* 3D WebGL Canvas Mount */}
-      <div ref={mountRef} className="w-full h-[400px] select-none" />
+      {/* Top Track Minimap Progress Bar */}
+      <div className="relative px-6 py-2 bg-background/95 border-b border-white/10 z-10">
+        <div className="flex items-center justify-between text-[11px] font-mono font-bold text-text-muted mb-1">
+          <span className="flex items-center space-x-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+            <span>START LINE</span>
+          </span>
+          <span className="text-white">
+            {currentPlayer ? `${Math.round(currentPlayer.progressPercent)}% COMPLETED` : 'CIRCUIT PROGRESS'}
+          </span>
+          <span className="flex items-center space-x-1 text-warning">
+            <Flag className="w-3.5 h-3.5" />
+            <span>FINISH ARCH</span>
+          </span>
+        </div>
+
+        {/* Track Line with Moving Cars */}
+        <div className="relative w-full h-3.5 rounded-full bg-surface-dark border border-white/10 overflow-visible">
+          {/* Progress fill for current player */}
+          {currentPlayer && (
+            <div
+              className="absolute left-0 top-0 h-full rounded-full bg-gradient-to-r from-primary via-accent to-primary opacity-60 transition-all duration-150"
+              style={{ width: `${Math.max(2, Math.min(100, currentPlayer.progressPercent))}%` }}
+            />
+          )}
+
+          {/* Opponent Car Pips */}
+          {racers.map((r) => {
+            if (r.isCurrentPlayer) return null;
+            return (
+              <div
+                key={r.userId}
+                className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-slate-400 border border-slate-700 shadow transition-all duration-150"
+                style={{ left: `${Math.max(1, Math.min(98, r.progressPercent))}%` }}
+                title={`${r.username}: ${Math.round(r.progressPercent)}%`}
+              />
+            );
+          })}
+
+          {/* Current Player Car Marker on Track */}
+          {currentPlayer && (
+            <div
+              className="absolute top-1/2 -translate-y-1/2 -ml-3 w-6 h-6 rounded-full bg-accent border-2 border-white shadow-lg shadow-accent/80 flex items-center justify-center font-bold text-[9px] text-black transition-all duration-150 z-20"
+              style={{ left: `${Math.max(2, Math.min(98, currentPlayer.progressPercent))}%` }}
+              title="You"
+            >
+              YOU
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 3D WebGL Canvas Viewport */}
+      <div className="relative w-full h-[420px]">
+        <div ref={mountRef} className="w-full h-full select-none" />
+
+        {/* Overtake Feedback Banner */}
+        {overtakeNotice && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-xl bg-emerald-500/90 border border-emerald-300 text-black font-mono font-black text-xs shadow-2xl backdrop-blur-md animate-bounce z-20">
+            {overtakeNotice}
+          </div>
+        )}
+
+        {/* Embedded Professional Speedometer HUD (Bottom-Right) */}
+        {currentPlayer && (
+          <div className="absolute bottom-4 right-4 p-3 rounded-2xl bg-background/85 border border-white/10 backdrop-blur-xl shadow-2xl flex items-center space-x-3.5 z-20 font-mono">
+            {/* Speedometer Radial Gauge */}
+            <div className="relative w-16 h-16 flex items-center justify-center">
+              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                <path
+                  className="text-white/10"
+                  strokeWidth="3.2"
+                  stroke="currentColor"
+                  fill="none"
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                />
+                <path
+                  className={isNitro ? 'text-amber-400' : speed >= 80 ? 'text-fuchsia-400' : 'text-accent'}
+                  strokeDasharray={`${speedPercentage}, 100`}
+                  strokeLinecap="round"
+                  strokeWidth="3.2"
+                  stroke="currentColor"
+                  fill="none"
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                />
+              </svg>
+              <div className="absolute flex flex-col items-center">
+                <span className="text-xl font-black text-white leading-none">
+                  {Math.round(speed)}
+                </span>
+                <span className="text-[8px] font-bold uppercase text-text-muted">km/h</span>
+              </div>
+            </div>
+
+            {/* Telemetry Readouts */}
+            <div className="flex flex-col space-y-1">
+              <div className={`px-2 py-0.5 rounded text-[9px] font-bold border uppercase tracking-wider ${speedState.bg} ${speedState.border} ${speedState.color}`}>
+                {speedState.label}
+              </div>
+
+              <div className="flex items-center space-x-2 text-xs">
+                <span className="text-text-muted">Pos:</span>
+                <span className="font-bold text-white">#{currentPlayer.rankPosition}</span>
+                <span className="text-text-muted">/</span>
+                <span className="text-text-muted">{racers.length}</span>
+              </div>
+
+              {isNitro && (
+                <div className="flex items-center space-x-1 text-[10px] font-black text-amber-400 animate-pulse">
+                  <Flame className="w-3 h-3 fill-current" />
+                  <span>NITRO ACTIVE</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Current Camera Mode Badge (Top-Left inside arena) */}
+        <div className="absolute top-3 left-4 px-2.5 py-1 rounded-lg bg-background/80 border border-white/10 text-[10px] font-mono text-text-muted backdrop-blur-md z-10 flex items-center space-x-1.5">
+          <Camera className="w-3 h-3 text-accent" />
+          <span className="uppercase font-bold text-white">{cameraMode} CAMERA</span>
+        </div>
+      </div>
 
       {/* Dynamic Racer Leaderboard Strip on Bottom */}
-      <div className="border-t border-white/10 px-4 py-2 bg-background/80 backdrop-blur-md flex items-center space-x-3 overflow-x-auto text-xs font-mono">
+      <div className="border-t border-white/10 px-4 py-2 bg-background/90 backdrop-blur-md flex items-center space-x-3 overflow-x-auto text-xs font-mono">
         <span className="text-[11px] font-bold text-text-muted uppercase shrink-0">
           Leaderboard ({racers.length}):
         </span>
@@ -381,25 +715,29 @@ export default function ThreeArena({
             onClick={() => setActiveSpectatingId(r.userId)}
             className={`flex items-center space-x-2 px-2.5 py-1 rounded-lg border transition shrink-0 ${
               r.isCurrentPlayer
-                ? 'bg-primary/20 border-primary/50 text-white font-bold ring-1 ring-primary/40'
+                ? 'bg-primary/25 border-accent text-white font-bold ring-1 ring-accent/60 shadow-lg shadow-primary/30'
                 : activeSpectatingId === r.userId
                 ? 'bg-accent/20 border-accent/50 text-accent font-bold'
                 : 'bg-surface-dark border-white/5 text-text-muted hover:border-white/20'
             }`}
           >
-            <span className="text-accent font-bold">#{r.rankPosition || i + 1}</span>
-            <span className="truncate max-w-[100px]">{r.username}</span>
+            <span className={r.isCurrentPlayer ? 'text-accent font-black' : 'text-text-muted'}>
+              #{r.rankPosition || i + 1}
+            </span>
+            <span className="truncate max-w-[100px] flex items-center space-x-1">
+              <span>{r.username}</span>
+              {r.isCurrentPlayer && <span className="text-[9px] px-1 rounded bg-accent text-black font-black">YOU</span>}
+            </span>
             <span className="text-text-dim text-[10px]">{Math.round(r.progressPercent)}%</span>
-            {r.nitroActive && <Sparkles className="w-3 h-3 text-warning animate-bounce" />}
+            {r.nitroActive && <Sparkles className="w-3 h-3 text-amber-400 animate-bounce" />}
           </button>
         ))}
         {racers.length > displayRacers.length && (
           <span className="text-text-muted text-[10px] shrink-0">
-            +{racers.length - displayRacers.length} more in pack
+            +{racers.length - displayRacers.length} more in grid
           </span>
         )}
       </div>
     </div>
   );
 }
-

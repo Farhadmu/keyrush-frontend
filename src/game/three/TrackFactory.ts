@@ -42,6 +42,52 @@ export class TrackFactory {
     return { x: laneX, z: currentZ, laneIndex, rowIndex };
   }
 
+  static createRoadTexture(): THREE.CanvasTexture | null {
+    if (typeof document === 'undefined') return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    // Deep dark asphalt base
+    ctx.fillStyle = '#0a0f1d';
+    ctx.fillRect(0, 0, 512, 512);
+
+    // Fine asphalt texture grain & grit
+    for (let i = 0; i < 4000; i++) {
+      const x = Math.random() * 512;
+      const y = Math.random() * 512;
+      const c = Math.floor(25 + Math.random() * 30);
+      ctx.fillStyle = `rgb(${c},${c + 4},${c + 12})`;
+      ctx.fillRect(x, y, 1.5, 1.5);
+    }
+
+    // High-contrast alternating rumble kerbs on edges
+    for (let y = 0; y < 512; y += 32) {
+      // Left rumble kerb
+      ctx.fillStyle = (y / 32) % 2 === 0 ? '#00F0FF' : '#0F172A';
+      ctx.fillRect(0, y, 22, 28);
+      // Right rumble kerb
+      ctx.fillStyle = (y / 32) % 2 === 0 ? '#8B5CF6' : '#0F172A';
+      ctx.fillRect(490, y, 22, 28);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    return texture;
+  }
+
+  static updateTrackMotion(trackGroup: THREE.Group, travelDistance: number) {
+    if (!trackGroup || !trackGroup.userData) return;
+    const roadTexture = trackGroup.userData.roadTexture as THREE.CanvasTexture;
+    if (roadTexture) {
+      // Scroll texture backward with travel distance
+      roadTexture.offset.y = -(travelDistance / 6) % 1.0;
+    }
+  }
+
   static createTrack(config: TrackConfig = {}): THREE.Group {
     const root = new THREE.Group();
     root.name = 'track_environment';
@@ -55,7 +101,7 @@ export class TrackFactory {
     const totalRoadLength = length + gridBack + 40;
     const roadCenterZ = (length - gridBack + 40) / 2;
 
-    // 1. Asphalt Road Surface
+    // 1. Asphalt Road Surface with Dynamic Scrolling Texture
     const roadGeom = new THREE.PlaneGeometry(roadWidth, totalRoadLength, 1, 32);
     roadGeom.rotateX(-Math.PI / 2);
     const roadMat = new THREE.MeshStandardMaterial({
@@ -63,6 +109,14 @@ export class TrackFactory {
       roughness: 0.85,
       metalness: 0.15,
     });
+
+    const roadTexture = this.createRoadTexture();
+    if (roadTexture) {
+      roadTexture.repeat.set(1, totalRoadLength / 6);
+      roadMat.map = roadTexture;
+      root.userData.roadTexture = roadTexture;
+    }
+
     const road = new THREE.Mesh(roadGeom, roadMat);
     road.position.set(0, 0, roadCenterZ);
     root.add(road);
@@ -139,10 +193,63 @@ export class TrackFactory {
     // 6. Start Line & Starting Lights Gantry
     this.buildStartGantry(root, roadWidth);
 
-    // 6. Finish Line & Arch
+    // 7. Finish Line & Arch
     this.buildFinishArch(root, roadWidth, length);
 
-    // 7. Scenery Environment Props based on theme
+    // 8. Roadside Neon Light Pillars (every 16 meters along the track)
+    const pillarMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5, metalness: 0.8 });
+    const cyanLightMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
+    const purpleLightMat = new THREE.MeshBasicMaterial({ color: 0x8b5cf6 });
+
+    const pillarStartZ = -gridBack;
+    const pillarEndZ = length + 20;
+
+    for (let pz = pillarStartZ; pz < pillarEndZ; pz += 16) {
+      [-roadWidth / 2 - 1.2, roadWidth / 2 + 1.2].forEach((xPos, idx) => {
+        const postGeom = new THREE.CylinderGeometry(0.12, 0.15, 3.8, 8);
+        const post = new THREE.Mesh(postGeom, pillarMat);
+        post.position.set(xPos, 1.9, pz);
+        root.add(post);
+
+        const capGeom = new THREE.SphereGeometry(0.2, 10, 10);
+        const cap = new THREE.Mesh(capGeom, idx === 0 ? cyanLightMat : purpleLightMat);
+        cap.position.set(xPos, 3.8, pz);
+        root.add(cap);
+      });
+    }
+
+    // 9. Overhead Holographic Speed Arches (every 50 meters along the track)
+    for (let archZ = 50; archZ < length - 25; archZ += 50) {
+      const archGroup = new THREE.Group();
+      archGroup.position.set(0, 0, archZ);
+
+      // Overhead beam
+      const truss = new THREE.Mesh(
+        new THREE.BoxGeometry(roadWidth + 3.0, 0.4, 0.4),
+        pillarMat,
+      );
+      truss.position.set(0, 4.6, 0);
+      archGroup.add(truss);
+
+      // Support pillars
+      [-roadWidth / 2 - 1.2, roadWidth / 2 + 1.2].forEach((xPos) => {
+        const p = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 4.6, 10), pillarMat);
+        p.position.set(xPos, 2.3, 0);
+        archGroup.add(p);
+      });
+
+      // Holographic glowing chevron band
+      const chevronBand = new THREE.Mesh(
+        new THREE.BoxGeometry(roadWidth * 0.7, 0.25, 0.08),
+        new THREE.MeshBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.85 }),
+      );
+      chevronBand.position.set(0, 4.4, 0.2);
+      archGroup.add(chevronBand);
+
+      root.add(archGroup);
+    }
+
+    // 10. Scenery Environment Props based on theme
     switch (theme) {
       case 'cyber_highway':
         this.buildCyberHighwayEnvironment(root, length, roadWidth);

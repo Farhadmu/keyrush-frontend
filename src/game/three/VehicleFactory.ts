@@ -23,6 +23,12 @@ export interface VehicleUserData {
   nitroFlames: THREE.Mesh[];
   headlights: THREE.Mesh[];
   taillights: THREE.Mesh[];
+  chassis?: THREE.Group;
+  indicatorGroup?: THREE.Group;
+  groundAura?: THREE.Mesh;
+  chevronMesh?: THREE.Mesh;
+  billboardSprite?: THREE.Sprite;
+  isCurrentPlayer?: boolean;
 }
 
 export class VehicleFactory {
@@ -238,6 +244,7 @@ export class VehicleFactory {
       nitroFlames,
       headlights,
       taillights,
+      chassis,
     };
     root.userData = userData;
 
@@ -610,6 +617,216 @@ export class VehicleFactory {
     userData.frontWheels.forEach((wheel) => {
       wheel.rotation.y = angleRad;
     });
+  }
+
+  static createBillboardTexture(
+    text: string,
+    isCurrentPlayer: boolean,
+    rankText: string = '',
+  ): THREE.Texture {
+    if (typeof document === 'undefined') {
+      return new THREE.Texture();
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return new THREE.CanvasTexture(canvas);
+
+    ctx.clearRect(0, 0, 256, 128);
+
+    if (isCurrentPlayer) {
+      // High-visibility cyan neon YOU pill
+      ctx.fillStyle = 'rgba(8, 13, 25, 0.9)';
+      ctx.strokeStyle = '#00F0FF';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      if (typeof ctx.roundRect === 'function') {
+        ctx.roundRect(16, 20, 224, 76, 16);
+      } else {
+        ctx.rect(16, 20, 224, 76);
+      }
+      ctx.fill();
+      ctx.stroke();
+
+      // Outer glow for "YOU"
+      ctx.shadowColor = '#00F0FF';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = '#00F0FF';
+      ctx.font = 'bold 26px monospace, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('▼ YOU ▼', 128, 44);
+
+      // Username subtext
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.fillText(text.slice(0, 14), 128, 74);
+    } else {
+      // Subtle opponent tag
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.4)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      if (typeof ctx.roundRect === 'function') {
+        ctx.roundRect(32, 36, 192, 54, 12);
+      } else {
+        ctx.rect(32, 36, 192, 54);
+      }
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = 'bold 18px monospace, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const label = rankText ? `${rankText} ${text.slice(0, 10)}` : text.slice(0, 12);
+      ctx.fillText(label, 128, 63);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    return texture;
+  }
+
+  static attachPlayerIdentity(
+    root: THREE.Group,
+    isCurrentPlayer: boolean,
+    username: string,
+    rankPosition: number = 1,
+  ) {
+    const ud = root.userData as VehicleUserData;
+    if (!ud) return;
+
+    // Remove existing indicator if present
+    if (ud.indicatorGroup) {
+      root.remove(ud.indicatorGroup);
+      ud.indicatorGroup = undefined;
+    }
+    if (ud.groundAura) {
+      root.remove(ud.groundAura);
+      ud.groundAura = undefined;
+    }
+
+    ud.isCurrentPlayer = isCurrentPlayer;
+
+    // 1. Emissive Car Body Accent for Player
+    if (ud.bodyMaterials && ud.bodyMaterials.length > 0) {
+      ud.bodyMaterials.forEach((mat) => {
+        if (isCurrentPlayer) {
+          mat.emissive = new THREE.Color(0x00d8ff);
+          mat.emissiveIntensity = 0.35;
+        } else {
+          mat.emissive = new THREE.Color(0x000000);
+          mat.emissiveIntensity = 0;
+        }
+      });
+    }
+
+    // 2. Ground Aura (for Current Player ONLY)
+    if (isCurrentPlayer) {
+      const auraGeom = new THREE.RingGeometry(1.15, 1.45, 32);
+      auraGeom.rotateX(-Math.PI / 2);
+      const auraMat = new THREE.MeshBasicMaterial({
+        color: 0x00f0ff,
+        transparent: true,
+        opacity: 0.75,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      });
+      const groundAura = new THREE.Mesh(auraGeom, auraMat);
+      groundAura.position.set(0, 0.03, 0);
+      root.add(groundAura);
+      ud.groundAura = groundAura;
+    }
+
+    // 3. Overhead Floating Tag & Chevron Indicator
+    const indicatorGroup = new THREE.Group();
+    indicatorGroup.name = 'player_indicator';
+
+    if (isCurrentPlayer) {
+      // Downward-pointing glowing chevron arrow
+      const chevronGeom = new THREE.ConeGeometry(0.22, 0.45, 4);
+      chevronGeom.rotateX(Math.PI); // Point downwards
+      const chevronMat = new THREE.MeshBasicMaterial({
+        color: 0x00f0ff,
+        transparent: true,
+        opacity: 0.9,
+      });
+      const chevron = new THREE.Mesh(chevronGeom, chevronMat);
+      chevron.position.set(0, 1.6, 0);
+      indicatorGroup.add(chevron);
+      ud.chevronMesh = chevron;
+    }
+
+    // Overhead Billboard Sprite
+    const texture = this.createBillboardTexture(
+      username,
+      isCurrentPlayer,
+      rankPosition ? `#${rankPosition}` : '',
+    );
+    const spriteMat = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+    });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.position.set(0, isCurrentPlayer ? 2.3 : 1.7, 0);
+    sprite.scale.set(isCurrentPlayer ? 2.4 : 1.8, isCurrentPlayer ? 1.2 : 0.9, 1);
+    indicatorGroup.add(sprite);
+    ud.billboardSprite = sprite;
+
+    root.add(indicatorGroup);
+    ud.indicatorGroup = indicatorGroup;
+  }
+
+  static updatePlayerIdentity(root: THREE.Group, time: number) {
+    const ud = root.userData as VehicleUserData;
+    if (!ud) return;
+
+    if (ud.isCurrentPlayer) {
+      // Bob chevron up and down
+      if (ud.chevronMesh) {
+        ud.chevronMesh.position.y = 1.6 + Math.sin(time * 6) * 0.1;
+        ud.chevronMesh.rotation.y = time * 2.5;
+      }
+      // Pulse ground aura
+      if (ud.groundAura) {
+        const pulse = 1.0 + Math.sin(time * 5) * 0.08;
+        ud.groundAura.scale.set(pulse, 1, pulse);
+        (ud.groundAura.material as THREE.MeshBasicMaterial).opacity = 0.65 + Math.sin(time * 5) * 0.2;
+      }
+    }
+  }
+
+  static updateVehicleDynamics(
+    group: THREE.Group,
+    speedKmh: number,
+    acceleration: number,
+    delta: number,
+    time: number,
+  ) {
+    const ud = group.userData as VehicleUserData;
+    if (!ud) return;
+
+    // 1. Continuous wheel rotation strictly proportional to actual km/h
+    if (ud.wheels && ud.wheels.length > 0) {
+      const rotSpeed = (speedKmh / 3.6 / 0.35) * delta;
+      ud.wheels.forEach((w) => {
+        w.rotation.x += rotSpeed;
+      });
+    }
+
+    // 2. Chassis Pitch & Engine Vibration
+    if (ud.chassis) {
+      const targetPitch = THREE.MathUtils.clamp(acceleration * 0.003, -0.05, 0.05);
+      ud.chassis.rotation.x = THREE.MathUtils.lerp(ud.chassis.rotation.x, targetPitch, 0.15);
+
+      const rumbleFreq = 20 + speedKmh * 0.5;
+      const rumbleAmp = speedKmh > 5 ? 0.004 : 0.001;
+      ud.chassis.position.y = Math.sin(time * rumbleFreq) * rumbleAmp;
+    }
   }
 
   private static getFinishParams(finish: string) {
