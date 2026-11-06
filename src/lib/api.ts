@@ -100,8 +100,8 @@ export const api = {
     apiFetch(`/users/admin/${id}/roles`, { method: 'PATCH', body: JSON.stringify({ roles }) }),
 
   // Typing & Practice
-  getRandomPassage: (language: string = 'EN', difficulty?: string) =>
-    apiFetch(`/typing/passages/random?language=${language}${difficulty ? `&difficulty=${difficulty}` : ''}`),
+  getRandomPassage: (language: string = 'EN', difficulty?: string, wordCount?: number) =>
+    apiFetch(`/typing/passages/random?language=${language}${difficulty ? `&difficulty=${difficulty}` : ''}${wordCount ? `&wordCount=${wordCount}` : ''}`),
   getAllPassages: (language?: string) =>
     apiFetch(`/typing/passages${language ? `?language=${language}` : ''}`),
   recordPractice: (payload: any) =>

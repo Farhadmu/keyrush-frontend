@@ -52,18 +52,20 @@ export default function TypingEngine({
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Reset state on passage change
+  // Reset state on passage change or when race resets
   useEffect(() => {
-    setTypedText('');
-    setErrors([]);
-    setTotalInputs(0);
-    setStartTime(null);
-    setStreak(0);
-    setIsFinished(false);
-    setNetWpm(0);
-    setRawWpm(0);
-    setAccuracy(100);
-  }, [passage.id]);
+    if (!raceStarted) {
+      setTypedText('');
+      setErrors([]);
+      setTotalInputs(0);
+      setStartTime(null);
+      setStreak(0);
+      setIsFinished(false);
+      setNetWpm(0);
+      setRawWpm(0);
+      setAccuracy(100);
+    }
+  }, [passage.id, raceStarted]);
 
   // Focus input when race starts
   useEffect(() => {

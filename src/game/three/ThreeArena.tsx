@@ -98,10 +98,11 @@ export default function ThreeArena({
     scene.add(purpleNeon);
 
     // Build Track Mesh
+    const numLanes = racers.length <= 4 ? 4 : racers.length <= 12 ? 6 : racers.length <= 40 ? 8 : 10;
     const track = TrackFactory.createTrack({
       theme: selectedTheme,
       trackLength,
-      numLanes: Math.max(racers.length, 2),
+      numLanes,
     });
     scene.add(track);
     trackGroupRef.current = track;
@@ -122,7 +123,17 @@ export default function ThreeArena({
 
       let targetPos = new THREE.Vector3(0, 0, 0);
 
-      // Smoothly interpolate racer vehicle meshes along track
+      // Clean up removed racer meshes
+      const currentIds = new Set(racers.map((r) => r.userId));
+      for (const [id, mesh] of carMeshesRef.current.entries()) {
+        if (!currentIds.has(id)) {
+          scene.remove(mesh);
+          carMeshesRef.current.delete(id);
+          racerPositionsRef.current.delete(id);
+        }
+      }
+
+      // Smoothly interpolate racer vehicle meshes along track and multi-row grid
       racers.forEach((racer, index) => {
         let carGroup = carMeshesRef.current.get(racer.userId);
         if (!carGroup) {
@@ -131,19 +142,23 @@ export default function ThreeArena({
           carMeshesRef.current.set(racer.userId, carGroup);
         }
 
-        const targetZ = TrackFactory.getZFromProgress(racer.progressPercent, trackLength);
-        const laneX = TrackFactory.getLaneX(index, Math.max(racers.length, 2));
+        const gridPos = TrackFactory.getGridPosition(
+          index,
+          racers.length,
+          trackLength,
+          racer.progressPercent,
+        );
 
         let currentPos = racerPositionsRef.current.get(racer.userId);
         if (!currentPos) {
-          currentPos = { currentZ: targetZ, currentX: laneX };
+          currentPos = { currentZ: gridPos.z, currentX: gridPos.x };
           racerPositionsRef.current.set(racer.userId, currentPos);
         }
 
         // Smooth position lerp
-        const distanceDelta = (targetZ - currentPos.currentZ) * 0.12;
+        const distanceDelta = (gridPos.z - currentPos.currentZ) * 0.12;
         currentPos.currentZ += distanceDelta;
-        currentPos.currentX += (laneX - currentPos.currentX) * 0.1;
+        currentPos.currentX += (gridPos.x - currentPos.currentX) * 0.1;
 
         carGroup.position.set(currentPos.currentX, 0, currentPos.currentZ);
 
@@ -217,7 +232,14 @@ export default function ThreeArena({
       carMeshesRef.current.clear();
       racerPositionsRef.current.clear();
     };
-  }, [webGlAvailable, useFallback2D, selectedTheme, trackLength]);
+  }, [webGlAvailable, useFallback2D, selectedTheme, trackLength, Math.min(racers.length, 10)]);
+
+  // Reset finish celebration on new race
+  useEffect(() => {
+    if (racers.every((r) => r.progressPercent === 0)) {
+      finishedTriggeredRef.current = false;
+    }
+  }, [racers]);
 
   // Check for finish line victory celebration
   useEffect(() => {
@@ -255,6 +277,12 @@ export default function ThreeArena({
 
   const currentPlayer = racers.find((r) => r.isCurrentPlayer);
 
+  // Filter racers for the bottom strip (top 8 + current player)
+  const sortedRacers = [...racers].sort((a, b) => (a.rankPosition || 999) - (b.rankPosition || 999));
+  const topRacers = sortedRacers.slice(0, 8);
+  const playerInTop = currentPlayer && topRacers.some((r) => r.userId === currentPlayer.userId);
+  const displayRacers = playerInTop || !currentPlayer ? topRacers : [...topRacers, currentPlayer];
+
   return (
     <div className="relative w-full rounded-2xl border border-white/10 bg-surface/90 overflow-hidden shadow-2xl backdrop-blur-xl flex flex-col">
       {/* 3D Arena Control HUD Header */}
@@ -265,14 +293,19 @@ export default function ThreeArena({
             <span>Three.js 3D Esports Arena</span>
           </div>
 
-          {currentPlayer && (
-            <div className="hidden sm:flex items-center space-x-2 text-xs font-mono">
-              <span className="text-text-muted">Rank:</span>
-              <span className="font-bold text-white">#{currentPlayer.rankPosition}</span>
-              <span className="text-text-muted">| Speed:</span>
-              <span className="font-bold text-accent">{currentPlayer.speed} km/h</span>
-            </div>
-          )}
+          <div className="hidden sm:flex items-center space-x-2 text-xs font-mono">
+            <span className="px-2 py-0.5 rounded bg-primary/20 border border-primary/40 font-bold text-accent">
+              Grid: {racers.length} Cars
+            </span>
+            {currentPlayer && (
+              <>
+                <span className="text-text-muted">| Rank:</span>
+                <span className="font-bold text-white">#{currentPlayer.rankPosition} of {racers.length}</span>
+                <span className="text-text-muted">| Speed:</span>
+                <span className="font-bold text-accent">{currentPlayer.speed} km/h</span>
+              </>
+            )}
+          </div>
         </div>
 
         {/* View Controls */}
@@ -339,8 +372,10 @@ export default function ThreeArena({
 
       {/* Dynamic Racer Leaderboard Strip on Bottom */}
       <div className="border-t border-white/10 px-4 py-2 bg-background/80 backdrop-blur-md flex items-center space-x-3 overflow-x-auto text-xs font-mono">
-        <span className="text-[11px] font-bold text-text-muted uppercase shrink-0">Racers:</span>
-        {racers.map((r, i) => (
+        <span className="text-[11px] font-bold text-text-muted uppercase shrink-0">
+          Leaderboard ({racers.length}):
+        </span>
+        {displayRacers.map((r, i) => (
           <button
             key={r.userId}
             onClick={() => setActiveSpectatingId(r.userId)}
@@ -358,6 +393,11 @@ export default function ThreeArena({
             {r.nitroActive && <Sparkles className="w-3 h-3 text-warning animate-bounce" />}
           </button>
         ))}
+        {racers.length > displayRacers.length && (
+          <span className="text-text-muted text-[10px] shrink-0">
+            +{racers.length - displayRacers.length} more in pack
+          </span>
+        )}
       </div>
     </div>
   );

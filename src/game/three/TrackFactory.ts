@@ -22,17 +22,41 @@ export class TrackFactory {
     return (clamped / 100) * trackLength;
   }
 
+  static getGridPosition(
+    index: number,
+    numRacers: number,
+    trackLength: number = 250,
+    progressPercent: number = 0,
+  ): { x: number; z: number; laneIndex: number; rowIndex: number } {
+    const numLanes = numRacers <= 4 ? 4 : numRacers <= 12 ? 6 : numRacers <= 40 ? 8 : 10;
+    const laneIndex = index % numLanes;
+    const rowIndex = Math.floor(index / numLanes);
+    const laneX = this.getLaneX(laneIndex, numLanes);
+
+    // Each row is staggered 4.5 meters behind the start line
+    const startZ = -rowIndex * 4.5;
+    const totalDistance = trackLength - startZ;
+    const clampedProgress = Math.max(0, Math.min(100, progressPercent)) / 100;
+    const currentZ = startZ + clampedProgress * totalDistance;
+
+    return { x: laneX, z: currentZ, laneIndex, rowIndex };
+  }
+
   static createTrack(config: TrackConfig = {}): THREE.Group {
     const root = new THREE.Group();
     root.name = 'track_environment';
 
     const theme = config.theme || 'neon_city';
     const length = config.trackLength || 250;
-    const numLanes = Math.max(2, Math.min(7, config.numLanes || 7));
+    const numLanes = Math.max(3, Math.min(10, config.numLanes || 6));
     const roadWidth = numLanes * this.LANE_WIDTH + 1.2;
 
+    const gridBack = 65; // Extended tarmac behind start line for multi-row grids
+    const totalRoadLength = length + gridBack + 40;
+    const roadCenterZ = (length - gridBack + 40) / 2;
+
     // 1. Asphalt Road Surface
-    const roadGeom = new THREE.PlaneGeometry(roadWidth, length + 40, 1, 32);
+    const roadGeom = new THREE.PlaneGeometry(roadWidth, totalRoadLength, 1, 32);
     roadGeom.rotateX(-Math.PI / 2);
     const roadMat = new THREE.MeshStandardMaterial({
       color: 0x0a0f1d,
@@ -40,24 +64,25 @@ export class TrackFactory {
       metalness: 0.15,
     });
     const road = new THREE.Mesh(roadGeom, roadMat);
-    road.position.set(0, 0, length / 2);
+    road.position.set(0, 0, roadCenterZ);
     root.add(road);
 
     // 2. White Edge Shoulders
     [-roadWidth / 2 + 0.15, roadWidth / 2 - 0.15].forEach((x) => {
-      const edgeGeom = new THREE.PlaneGeometry(0.18, length + 40);
+      const edgeGeom = new THREE.PlaneGeometry(0.18, totalRoadLength);
       edgeGeom.rotateX(-Math.PI / 2);
       const edgeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
       const edge = new THREE.Mesh(edgeGeom, edgeMat);
-      edge.position.set(x, 0.01, length / 2);
+      edge.position.set(x, 0.01, roadCenterZ);
       root.add(edge);
     });
 
     // 3. Dashed Lane Dividers
     for (let lane = 1; lane < numLanes; lane++) {
       const x = -roadWidth / 2 + 0.6 + lane * this.LANE_WIDTH;
-      const numDashes = Math.floor(length / 6);
-      for (let d = 0; d < numDashes; d++) {
+      const startD = -Math.floor(gridBack / 6);
+      const endD = Math.floor((length + 30) / 6);
+      for (let d = startD; d < endD; d++) {
         const dashGeom = new THREE.PlaneGeometry(0.12, 2.5);
         dashGeom.rotateX(-Math.PI / 2);
         const dashMat = new THREE.MeshBasicMaterial({ color: 0x94a3b8 });
@@ -67,30 +92,51 @@ export class TrackFactory {
       }
     }
 
-    // 4. Guardrails & Curbs
+    // 4. Starting Grid Markings (Boxes on the tarmac behind the start line)
+    const maxGridRows = 12;
+    for (let row = 0; row < maxGridRows; row++) {
+      const rowZ = -row * 4.5;
+      for (let lane = 0; lane < numLanes; lane++) {
+        const laneX = this.getLaneX(lane, numLanes);
+        // Grid Box Outline
+        const boxGeom = new THREE.PlaneGeometry(1.6, 3.2);
+        boxGeom.rotateX(-Math.PI / 2);
+        const boxMat = new THREE.MeshBasicMaterial({
+          color: 0x38bdf8,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.6,
+        });
+        const box = new THREE.Mesh(boxGeom, boxMat);
+        box.position.set(laneX, 0.015, rowZ);
+        root.add(box);
+      }
+    }
+
+    // 5. Guardrails & Curbs
     const curbHeight = 0.35;
     [-roadWidth / 2 - 0.25, roadWidth / 2 + 0.25].forEach((xPos, idx) => {
       // Barrier Wall
-      const wallGeom = new THREE.BoxGeometry(0.4, curbHeight, length + 40);
+      const wallGeom = new THREE.BoxGeometry(0.4, curbHeight, totalRoadLength);
       const wallMat = new THREE.MeshStandardMaterial({
         color: 0x1e293b,
         roughness: 0.5,
         metalness: 0.7,
       });
       const wall = new THREE.Mesh(wallGeom, wallMat);
-      wall.position.set(xPos, curbHeight / 2, length / 2);
+      wall.position.set(xPos, curbHeight / 2, roadCenterZ);
       root.add(wall);
 
       // Neon LED strip on top of guardrail
       const stripColor = idx === 0 ? 0x00f0ff : 0x8b5cf6;
-      const stripGeom = new THREE.BoxGeometry(0.08, 0.08, length + 40);
+      const stripGeom = new THREE.BoxGeometry(0.08, 0.08, totalRoadLength);
       const stripMat = new THREE.MeshBasicMaterial({ color: stripColor });
       const strip = new THREE.Mesh(stripGeom, stripMat);
-      strip.position.set(xPos + (idx === 0 ? 0.2 : -0.2), curbHeight, length / 2);
+      strip.position.set(xPos + (idx === 0 ? 0.2 : -0.2), curbHeight, roadCenterZ);
       root.add(strip);
     });
 
-    // 5. Start Line & Starting Lights Gantry
+    // 6. Start Line & Starting Lights Gantry
     this.buildStartGantry(root, roadWidth);
 
     // 6. Finish Line & Arch
