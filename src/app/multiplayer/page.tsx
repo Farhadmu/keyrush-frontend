@@ -304,7 +304,7 @@ export default function MultiplayerPage() {
           )}
 
           {/* 3D WebGL Multiplayer Arena */}
-          <ThreeArena racers={racers} raceStarted={raceStarted} />
+          <ThreeArena racers={racers} raceStarted={raceStarted} countdown={countdown} />
 
           {/* Typing Engine during Race */}
           {activeRoom.passage && (

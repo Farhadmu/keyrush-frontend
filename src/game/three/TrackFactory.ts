@@ -5,7 +5,7 @@ export type TrackTheme = 'neon_city' | 'cyber_highway' | 'desert_dunes' | 'mount
 export interface TrackConfig {
   theme?: TrackTheme;
   trackLength?: number; // total units along Z
-  numLanes?: number; // 2 to 7 lanes
+  numLanes?: number; // 2 to 10 lanes
 }
 
 export class TrackFactory {
@@ -76,16 +76,126 @@ export class TrackFactory {
     const texture = new THREE.CanvasTexture(canvas);
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
+    texture.anisotropy = 16;
     return texture;
   }
 
-  static updateTrackMotion(trackGroup: THREE.Group, travelDistance: number) {
-    if (!trackGroup || !trackGroup.userData) return;
-    const roadTexture = trackGroup.userData.roadTexture as THREE.CanvasTexture;
-    if (roadTexture) {
-      // Scroll texture backward with travel distance
-      roadTexture.offset.y = -(travelDistance / 6) % 1.0;
+  // --- High-Resolution Finish Signboard Canvas Texture ---
+  static createFinishSignTexture(): THREE.CanvasTexture | null {
+    if (typeof document === 'undefined') return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    // High-tech dark gradient background with cyber cyan/green border
+    const grad = ctx.createLinearGradient(0, 0, 1024, 0);
+    grad.addColorStop(0, '#022c22');
+    grad.addColorStop(0.5, '#052e16');
+    grad.addColorStop(1, '#022c22');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 1024, 256);
+
+    // Top & Bottom Racing Checkered Bands
+    const sqSize = 16;
+    for (let x = 0; x < 1024; x += sqSize) {
+      for (let y = 0; y < 32; y += sqSize) {
+        ctx.fillStyle = ((x / sqSize) + (y / sqSize)) % 2 === 0 ? '#ffffff' : '#000000';
+        ctx.fillRect(x, y, sqSize, sqSize);
+        ctx.fillRect(x, 256 - 32 + y, sqSize, sqSize);
+      }
     }
+
+    // Neon Glowing Borders
+    ctx.strokeStyle = '#22c55e';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(4, 32, 1016, 192);
+
+    // Text: FINISH LINE
+    ctx.font = '900 68px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = '#22c55e';
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('🏁  FINISH LINE  🏁', 512, 100);
+
+    // Subtitle: KEYRUSH GLOBAL ESPORTS
+    ctx.font = '800 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace';
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillText('★ KEYRUSH GLOBAL ESPORTS ★', 512, 172);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.anisotropy = 16;
+    return tex;
+  }
+
+  // --- Checkered Finish Line Ground Decal Texture ---
+  static createCheckeredFinishTexture(): THREE.CanvasTexture | null {
+    if (typeof document === 'undefined') return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    const cols = 16;
+    const rows = 8;
+    const cellW = 512 / cols;
+    const cellH = 256 / rows;
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        ctx.fillStyle = (r + c) % 2 === 0 ? '#ffffff' : '#0a0f1d';
+        ctx.fillRect(c * cellW, r * cellH, cellW, cellH);
+      }
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.anisotropy = 16;
+    return tex;
+  }
+
+  // --- Distance Signboard Canvas Texture (150m, 100m, 50m, 25m) ---
+  static createDistanceSignTexture(text: string, subtitle?: string): THREE.CanvasTexture | null {
+    if (typeof document === 'undefined') return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 160;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, 512, 160);
+
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(3, 3, 506, 154);
+
+    ctx.font = '900 48px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(text, 256, 65);
+
+    if (subtitle) {
+      ctx.font = '800 20px monospace';
+      ctx.shadowColor = '#38bdf8';
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillText(subtitle, 256, 120);
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.anisotropy = 16;
+    return tex;
   }
 
   static createTrack(config: TrackConfig = {}): THREE.Group {
@@ -97,11 +207,30 @@ export class TrackFactory {
     const numLanes = Math.max(3, Math.min(10, config.numLanes || 6));
     const roadWidth = numLanes * this.LANE_WIDTH + 1.2;
 
-    const gridBack = 65; // Extended tarmac behind start line for multi-row grids
-    const totalRoadLength = length + gridBack + 40;
-    const roadCenterZ = (length - gridBack + 40) / 2;
+    const gridBack = 75; // Extended tarmac behind start line for multi-row grids
+    const totalRoadLength = length + gridBack + 60;
+    const roadCenterZ = (length - gridBack + 60) / 2;
 
-    // 1. Asphalt Road Surface with Dynamic Scrolling Texture
+    // 0. Massive Cyber Ground Grid Floor (Underneath & Expanding Outwards)
+    const gridFloor = new THREE.GridHelper(totalRoadLength * 1.5, 80, 0x00f0ff, 0x1e1b4b);
+    gridFloor.position.set(0, -0.06, roadCenterZ);
+    root.add(gridFloor);
+
+    // Dark side ground terrain
+    [-roadWidth / 2 - 60, roadWidth / 2 + 60].forEach((sideX) => {
+      const terrainGeom = new THREE.PlaneGeometry(120, totalRoadLength);
+      terrainGeom.rotateX(-Math.PI / 2);
+      const terrainMat = new THREE.MeshStandardMaterial({
+        color: 0x060913,
+        roughness: 0.95,
+        metalness: 0.1,
+      });
+      const terrain = new THREE.Mesh(terrainGeom, terrainMat);
+      terrain.position.set(sideX, -0.04, roadCenterZ);
+      root.add(terrain);
+    });
+
+    // 1. Asphalt Road Surface
     const roadGeom = new THREE.PlaneGeometry(roadWidth, totalRoadLength, 1, 32);
     roadGeom.rotateX(-Math.PI / 2);
     const roadMat = new THREE.MeshStandardMaterial({
@@ -134,14 +263,14 @@ export class TrackFactory {
     // 3. Dashed Lane Dividers
     for (let lane = 1; lane < numLanes; lane++) {
       const x = -roadWidth / 2 + 0.6 + lane * this.LANE_WIDTH;
-      const startD = -Math.floor(gridBack / 6);
-      const endD = Math.floor((length + 30) / 6);
+      const startD = -Math.floor(gridBack / 5);
+      const endD = Math.floor((length + 50) / 5);
       for (let d = startD; d < endD; d++) {
-        const dashGeom = new THREE.PlaneGeometry(0.12, 2.5);
+        const dashGeom = new THREE.PlaneGeometry(0.14, 2.6);
         dashGeom.rotateX(-Math.PI / 2);
         const dashMat = new THREE.MeshBasicMaterial({ color: 0x94a3b8 });
         const dash = new THREE.Mesh(dashGeom, dashMat);
-        dash.position.set(x, 0.01, d * 6);
+        dash.position.set(x, 0.01, d * 5);
         root.add(dash);
       }
     }
@@ -167,7 +296,7 @@ export class TrackFactory {
       }
     }
 
-    // 5. Guardrails & Curbs
+    // 5. Guardrails & Curbs with Neon LED Strips
     const curbHeight = 0.35;
     [-roadWidth / 2 - 0.25, roadWidth / 2 + 0.25].forEach((xPos, idx) => {
       // Barrier Wall
@@ -193,80 +322,101 @@ export class TrackFactory {
     // 6. Start Line & Starting Lights Gantry
     this.buildStartGantry(root, roadWidth);
 
-    // 7. Finish Line & Arch
+    // 7. Finish Line & High-Impact Esports Arch
     this.buildFinishArch(root, roadWidth, length);
 
-    // 8. Roadside Neon Light Pillars (every 16 meters along the track)
+    // 8. Roadside Neon Light Pillars (every 12 meters along the entire track)
     const pillarMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5, metalness: 0.8 });
     const cyanLightMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
     const purpleLightMat = new THREE.MeshBasicMaterial({ color: 0x8b5cf6 });
 
-    const pillarStartZ = -gridBack;
-    const pillarEndZ = length + 20;
+    const pillarStartZ = -gridBack - 10;
+    const pillarEndZ = length + 40;
 
-    for (let pz = pillarStartZ; pz < pillarEndZ; pz += 16) {
+    for (let pz = pillarStartZ; pz < pillarEndZ; pz += 12) {
       [-roadWidth / 2 - 1.2, roadWidth / 2 + 1.2].forEach((xPos, idx) => {
         const postGeom = new THREE.CylinderGeometry(0.12, 0.15, 3.8, 8);
         const post = new THREE.Mesh(postGeom, pillarMat);
         post.position.set(xPos, 1.9, pz);
         root.add(post);
 
-        const capGeom = new THREE.SphereGeometry(0.2, 10, 10);
+        const capGeom = new THREE.SphereGeometry(0.22, 10, 10);
         const cap = new THREE.Mesh(capGeom, idx === 0 ? cyanLightMat : purpleLightMat);
         cap.position.set(xPos, 3.8, pz);
         root.add(cap);
       });
     }
 
-    // 9. Overhead Holographic Speed Arches (every 50 meters along the track)
-    for (let archZ = 50; archZ < length - 25; archZ += 50) {
-      const archGroup = new THREE.Group();
-      archGroup.position.set(0, 0, archZ);
+    // 9. Overhead Distance Gantries along the Track (Approaching the Finish Line)
+    const milestones = [
+      { dist: 150, text: '🏁 150M TO FINISH', sub: 'MAINTAIN SPEED' },
+      { dist: 100, text: '🏁 100M TO FINISH', sub: 'MAXIMUM ACCEL' },
+      { dist: 50, text: '⚡ 50M TO FINISH', sub: 'FINAL SPRINT' },
+      { dist: 25, text: '🔥 25M FINAL STRETCH', sub: 'ALL NITRO' },
+    ];
 
-      // Overhead beam
-      const truss = new THREE.Mesh(
-        new THREE.BoxGeometry(roadWidth + 3.0, 0.4, 0.4),
-        pillarMat,
-      );
-      truss.position.set(0, 4.6, 0);
-      archGroup.add(truss);
-
-      // Support pillars
-      [-roadWidth / 2 - 1.2, roadWidth / 2 + 1.2].forEach((xPos) => {
-        const p = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 4.6, 10), pillarMat);
-        p.position.set(xPos, 2.3, 0);
-        archGroup.add(p);
-      });
-
-      // Holographic glowing chevron band
-      const chevronBand = new THREE.Mesh(
-        new THREE.BoxGeometry(roadWidth * 0.7, 0.25, 0.08),
-        new THREE.MeshBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.85 }),
-      );
-      chevronBand.position.set(0, 4.4, 0.2);
-      archGroup.add(chevronBand);
-
-      root.add(archGroup);
-    }
+    milestones.forEach((m) => {
+      const signZ = length - m.dist;
+      if (signZ > 20) {
+        this.buildDistanceGantry(root, roadWidth, signZ, m.text, m.sub);
+      }
+    });
 
     // 10. Scenery Environment Props based on theme
     switch (theme) {
       case 'cyber_highway':
-        this.buildCyberHighwayEnvironment(root, length, roadWidth);
+        this.buildCyberHighwayEnvironment(root, length, roadWidth, gridBack);
         break;
       case 'desert_dunes':
-        this.buildDesertEnvironment(root, length, roadWidth);
+        this.buildDesertEnvironment(root, length, roadWidth, gridBack);
         break;
       case 'mountain_peak':
-        this.buildMountainEnvironment(root, length, roadWidth);
+        this.buildMountainEnvironment(root, length, roadWidth, gridBack);
         break;
       case 'neon_city':
       default:
-        this.buildNeonCityEnvironment(root, length, roadWidth);
+        this.buildNeonCityEnvironment(root, length, roadWidth, gridBack);
         break;
     }
 
     return root;
+  }
+
+  // --- Distance Gantry Builder ---
+  private static buildDistanceGantry(
+    root: THREE.Group,
+    roadWidth: number,
+    zPos: number,
+    text: string,
+    subText?: string,
+  ) {
+    const gantry = new THREE.Group();
+    gantry.position.set(0, 0, zPos);
+    const metalMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4, metalness: 0.8 });
+
+    // Side pillars
+    [-roadWidth / 2 - 1.2, roadWidth / 2 + 1.2].forEach((x) => {
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 5.0, 10), metalMat);
+      pillar.position.set(x, 2.5, 0);
+      gantry.add(pillar);
+    });
+
+    // Overhead truss beam
+    const truss = new THREE.Mesh(new THREE.BoxGeometry(roadWidth + 3.0, 0.4, 0.4), metalMat);
+    truss.position.set(0, 4.8, 0);
+    gantry.add(truss);
+
+    // Distance Signboard Canvas Mesh
+    const signTex = this.createDistanceSignTexture(text, subText);
+    if (signTex) {
+      const signGeom = new THREE.PlaneGeometry(Math.min(roadWidth * 0.75, 12), 2.2);
+      const signMat = new THREE.MeshBasicMaterial({ map: signTex, side: THREE.DoubleSide });
+      const signMesh = new THREE.Mesh(signGeom, signMat);
+      signMesh.position.set(0, 4.8, -0.22);
+      gantry.add(signMesh);
+    }
+
+    root.add(gantry);
   }
 
   // --- Start Gantry Builder ---
@@ -278,33 +428,35 @@ export class TrackFactory {
 
     // Side pillars
     [-roadWidth / 2 - 1.0, roadWidth / 2 + 1.0].forEach((x) => {
-      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 4.5, 12), metalMat);
-      pillar.position.set(x, 2.25, 0);
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 4.8, 12), metalMat);
+      pillar.position.set(x, 2.4, 0);
       gantry.add(pillar);
     });
 
     // Overhead truss beam
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(roadWidth + 2.5, 0.4, 0.4), metalMat);
-    beam.position.set(0, 4.3, 0);
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(roadWidth + 2.5, 0.45, 0.45), metalMat);
+    beam.position.set(0, 4.5, 0);
     gantry.add(beam);
 
     // Starting Countdown Lights (Red, Amber, Green)
-    [-1.2, 0, 1.2].forEach((xOffset, idx) => {
-      const lightBox = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.35, 0.2), metalMat);
-      lightBox.position.set(xOffset, 3.8, 0);
+    const startLights: THREE.Mesh[] = [];
+    [-1.4, 0, 1.4].forEach((xOffset, idx) => {
+      const lightBox = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.4, 0.25), metalMat);
+      lightBox.position.set(xOffset, 4.0, 0);
       gantry.add(lightBox);
 
       const colors = [0xef4444, 0xf59e0b, 0x22c55e];
-      const lens = new THREE.Mesh(
-        new THREE.SphereGeometry(0.12, 12, 12),
-        new THREE.MeshBasicMaterial({ color: colors[idx] }),
-      );
-      lens.position.set(xOffset, 3.8, 0.1);
+      const lensMat = new THREE.MeshBasicMaterial({ color: colors[idx] });
+      const lens = new THREE.Mesh(new THREE.SphereGeometry(0.14, 14, 14), lensMat);
+      lens.position.set(xOffset, 4.0, 0.12);
       gantry.add(lens);
+      startLights.push(lens);
     });
 
+    root.userData.startLights = startLights;
+
     // Start Line on asphalt
-    const lineGeom = new THREE.PlaneGeometry(roadWidth, 0.6);
+    const lineGeom = new THREE.PlaneGeometry(roadWidth, 0.8);
     lineGeom.rotateX(-Math.PI / 2);
     const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const line = new THREE.Mesh(lineGeom, lineMat);
@@ -314,66 +466,120 @@ export class TrackFactory {
     root.add(gantry);
   }
 
-  // --- Finish Arch Builder ---
+  // --- High-Impact Esports Finish Line & Arch Builder ---
   private static buildFinishArch(root: THREE.Group, roadWidth: number, length: number) {
     const arch = new THREE.Group();
     arch.position.set(0, 0, length);
 
     const metalMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.3, metalness: 0.9 });
+    const towerH = 6.8;
 
-    // Side pillars
-    [-roadWidth / 2 - 1.2, roadWidth / 2 + 1.2].forEach((x) => {
-      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.35, 5.2, 16), metalMat);
-      pillar.position.set(x, 2.6, 0);
+    // 1. Dual Heavy Grand Truss Towers
+    [-roadWidth / 2 - 1.4, roadWidth / 2 + 1.4].forEach((x, idx) => {
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, towerH, 16), metalMat);
+      pillar.position.set(x, towerH / 2, 0);
       arch.add(pillar);
+
+      // Tower cross-braces
+      const braceGeom = new THREE.BoxGeometry(0.1, 0.1, 1.2);
+      const brace = new THREE.Mesh(braceGeom, metalMat);
+      brace.position.set(x, towerH * 0.75, 0);
+      arch.add(brace);
+
+      // Flashing Tower Beacon
+      const beaconGeom = new THREE.SphereGeometry(0.3, 12, 12);
+      const beaconMat = new THREE.MeshBasicMaterial({
+        color: idx === 0 ? 0x22c55e : 0x00f0ff,
+      });
+      const beacon = new THREE.Mesh(beaconGeom, beaconMat);
+      beacon.position.set(x, towerH + 0.2, 0);
+      arch.add(beacon);
+
+      // Sky-Piercing Victory Laser Beams (Visible from afar across the track)
+      const laserGeom = new THREE.CylinderGeometry(0.35, 0.9, 70, 16);
+      const laserMat = new THREE.MeshBasicMaterial({
+        color: idx === 0 ? 0x22c55e : 0x00f0ff,
+        transparent: true,
+        opacity: 0.55,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const laser = new THREE.Mesh(laserGeom, laserMat);
+      laser.position.set(x, 35, 0);
+      arch.add(laser);
     });
 
-    // Overhead Bridge Arch
-    const bridge = new THREE.Mesh(new THREE.BoxGeometry(roadWidth + 3.0, 0.8, 0.6), metalMat);
-    bridge.position.set(0, 5.0, 0);
+    // 2. Overhead Truss Bridge
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(roadWidth + 3.8, 1.0, 0.8), metalMat);
+    bridge.position.set(0, 5.4, 0);
     arch.add(bridge);
 
-    // Glowing "FINISH" Board
-    const boardMat = new THREE.MeshBasicMaterial({ color: 0x22c55e });
-    const board = new THREE.Mesh(new THREE.BoxGeometry(roadWidth * 0.7, 0.5, 0.1), boardMat);
-    board.position.set(0, 5.0, -0.35);
-    arch.add(board);
+    // 3. Huge Glowing "FINISH LINE" Canvas Signboard (Facing oncoming racers)
+    const finishTex = this.createFinishSignTexture();
+    if (finishTex) {
+      const boardWidth = Math.min(roadWidth * 0.88, 14);
+      const boardGeom = new THREE.PlaneGeometry(boardWidth, 2.6);
+      const boardMat = new THREE.MeshBasicMaterial({
+        map: finishTex,
+        side: THREE.DoubleSide,
+      });
 
-    // Finish Checkered Pattern Ground
-    const checkeredGeom = new THREE.PlaneGeometry(roadWidth, 1.2, 16, 2);
+      // Front-facing sign
+      const boardFront = new THREE.Mesh(boardGeom, boardMat);
+      boardFront.position.set(0, 5.4, -0.45);
+      arch.add(boardFront);
+
+      // Back-facing sign (for after crossing)
+      const boardBack = new THREE.Mesh(boardGeom, boardMat);
+      boardBack.position.set(0, 5.4, 0.45);
+      boardBack.rotateY(Math.PI);
+      arch.add(boardBack);
+    }
+
+    // 4. Genuine Black & White Racing Checkered Ground Decal
+    const checkeredTex = this.createCheckeredFinishTexture();
+    const checkeredGeom = new THREE.PlaneGeometry(roadWidth, 4.0);
     checkeredGeom.rotateX(-Math.PI / 2);
-    const checkeredMat = new THREE.MeshBasicMaterial({ color: 0x22c55e });
+    const checkeredMat = new THREE.MeshBasicMaterial({
+      map: checkeredTex || undefined,
+      color: checkeredTex ? 0xffffff : 0x22c55e,
+    });
     const checkered = new THREE.Mesh(checkeredGeom, checkeredMat);
-    checkered.position.set(0, 0.02, 0);
+    checkered.position.set(0, 0.025, 0);
     arch.add(checkered);
 
-    // Overhead Victory Beacons (Cyan/Green spotlights)
-    const victoryLight1 = new THREE.PointLight(0x22c55e, 4, 15);
-    victoryLight1.position.set(-roadWidth / 4, 4.5, 0);
-    const victoryLight2 = new THREE.PointLight(0x00f0ff, 4, 15);
-    victoryLight2.position.set(roadWidth / 4, 4.5, 0);
+    // 5. High-intensity Victory Floodlights shining down onto finish line
+    const victoryLight1 = new THREE.PointLight(0x22c55e, 5, 20);
+    victoryLight1.position.set(-roadWidth / 4, 4.8, 0);
+    const victoryLight2 = new THREE.PointLight(0x00f0ff, 5, 20);
+    victoryLight2.position.set(roadWidth / 4, 4.8, 0);
     arch.add(victoryLight1, victoryLight2);
 
     root.add(arch);
   }
 
   // --- Neon City Environment ---
-  private static buildNeonCityEnvironment(root: THREE.Group, length: number, roadWidth: number) {
-    const buildingColors = [0x0f172a, 0x1e1b4b, 0x022c22, 0x18181b];
-    const neonAccents = [0x00f0ff, 0x8b5cf6, 0xec4899, 0xf59e0b];
+  private static buildNeonCityEnvironment(
+    root: THREE.Group,
+    length: number,
+    roadWidth: number,
+    gridBack: number = 75,
+  ) {
+    const buildingColors = [0x0f172a, 0x1e1b4b, 0x022c22, 0x18181b, 0x111827];
+    const neonAccents = [0x00f0ff, 0x8b5cf6, 0xec4899, 0xf59e0b, 0x10b981];
 
     const offset = roadWidth / 2 + 5;
-    const numBuildings = Math.floor(length / 20);
+    const startZ = -gridBack - 10;
+    const endZ = length + 50;
 
-    for (let i = 0; i < numBuildings; i++) {
-      const z = i * 20 + 10;
-
+    for (let z = startZ; z < endZ; z += 18) {
       // Left skyscraper
-      const hL = 15 + Math.random() * 25;
+      const hL = 16 + Math.random() * 26;
       const wL = 6 + Math.random() * 4;
-      const bGeomL = new THREE.BoxGeometry(wL, hL, 12);
+      const bGeomL = new THREE.BoxGeometry(wL, hL, 14);
       const bMatL = new THREE.MeshStandardMaterial({
-        color: buildingColors[i % buildingColors.length],
+        color: buildingColors[Math.abs(Math.floor(z / 18)) % buildingColors.length],
         roughness: 0.3,
         metalness: 0.7,
       });
@@ -383,14 +589,16 @@ export class TrackFactory {
 
       // Neon window grid on building
       const winGeom = new THREE.PlaneGeometry(0.4, hL * 0.8);
-      const winMat = new THREE.MeshBasicMaterial({ color: neonAccents[i % neonAccents.length] });
+      const winMat = new THREE.MeshBasicMaterial({
+        color: neonAccents[Math.abs(Math.floor(z / 18)) % neonAccents.length],
+      });
       const win = new THREE.Mesh(winGeom, winMat);
       win.position.set(-offset + 0.1, hL / 2, z);
       win.rotateY(Math.PI / 2);
       root.add(win);
 
       // Right skyscraper
-      const hR = 18 + Math.random() * 22;
+      const hR = 18 + Math.random() * 24;
       const wR = 7 + Math.random() * 3;
       const buildingR = new THREE.Mesh(new THREE.BoxGeometry(wR, hR, 14), bMatL);
       buildingR.position.set(offset + wR / 2, hR / 2, z);
@@ -398,32 +606,35 @@ export class TrackFactory {
 
       // Street Lamps along road
       const lampPillar = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.08, 0.1, 4.0, 8),
+        new THREE.CylinderGeometry(0.08, 0.1, 4.2, 8),
         new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8 }),
       );
-      lampPillar.position.set(-roadWidth / 2 - 0.8, 2.0, z);
+      lampPillar.position.set(-roadWidth / 2 - 0.9, 2.1, z);
       root.add(lampPillar);
 
       const lampHead = new THREE.Mesh(
-        new THREE.SphereGeometry(0.2, 8, 8),
+        new THREE.SphereGeometry(0.22, 8, 8),
         new THREE.MeshBasicMaterial({ color: 0x00f0ff }),
       );
-      lampHead.position.set(-roadWidth / 2 - 0.4, 4.0, z);
+      lampHead.position.set(-roadWidth / 2 - 0.5, 4.2, z);
       root.add(lampHead);
     }
   }
 
   // --- Cyber Highway Environment ---
-  private static buildCyberHighwayEnvironment(root: THREE.Group, length: number, roadWidth: number) {
-    // Floor grid under elevated highway
+  private static buildCyberHighwayEnvironment(
+    root: THREE.Group,
+    length: number,
+    roadWidth: number,
+    gridBack: number = 75,
+  ) {
     const gridHelper = new THREE.GridHelper(length * 1.5, 40, 0x8b5cf6, 0x1e1b4b);
     gridHelper.position.set(0, -6, length / 2);
     root.add(gridHelper);
 
-    // Highway support pillars underneath
-    const numPillars = Math.floor(length / 25);
-    for (let i = 0; i < numPillars; i++) {
-      const z = i * 25 + 12;
+    const startZ = -gridBack;
+    const endZ = length + 30;
+    for (let z = startZ; z < endZ; z += 25) {
       const pillar = new THREE.Mesh(
         new THREE.CylinderGeometry(0.8, 1.2, 6.0, 12),
         new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.6, metalness: 0.4 }),
@@ -434,12 +645,16 @@ export class TrackFactory {
   }
 
   // --- Desert Dunes Environment ---
-  private static buildDesertEnvironment(root: THREE.Group, length: number, roadWidth: number) {
+  private static buildDesertEnvironment(
+    root: THREE.Group,
+    length: number,
+    roadWidth: number,
+    gridBack: number = 75,
+  ) {
     const sandMat = new THREE.MeshStandardMaterial({ color: 0x1a120b, roughness: 0.95 });
-    const numDunes = Math.floor(length / 30);
-
-    for (let i = 0; i < numDunes; i++) {
-      const z = i * 30 + 15;
+    const startZ = -gridBack;
+    const endZ = length + 30;
+    for (let z = startZ; z < endZ; z += 30) {
       [-roadWidth / 2 - 12, roadWidth / 2 + 12].forEach((xPos) => {
         const duneGeom = new THREE.SphereGeometry(14, 12, 8);
         duneGeom.scale(1.2, 0.4, 1.5);
@@ -451,13 +666,18 @@ export class TrackFactory {
   }
 
   // --- Mountain Peak Environment ---
-  private static buildMountainEnvironment(root: THREE.Group, length: number, roadWidth: number) {
+  private static buildMountainEnvironment(
+    root: THREE.Group,
+    length: number,
+    roadWidth: number,
+    gridBack: number = 75,
+  ) {
     const rockMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.9 });
     const snowMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.7 });
 
-    const numPeaks = Math.floor(length / 35);
-    for (let i = 0; i < numPeaks; i++) {
-      const z = i * 35 + 18;
+    const startZ = -gridBack;
+    const endZ = length + 30;
+    for (let z = startZ; z < endZ; z += 35) {
       const h = 20 + Math.random() * 15;
       const coneGeom = new THREE.ConeGeometry(15, h, 6);
       const mountain = new THREE.Mesh(coneGeom, rockMat);
@@ -472,4 +692,3 @@ export class TrackFactory {
     }
   }
 }
-

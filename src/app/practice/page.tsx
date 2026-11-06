@@ -634,6 +634,7 @@ export default function PracticePage() {
         racers={racers}
         trackLength={Math.max(240, Math.min(450, targetWordCount * 2.5))}
         raceStarted={raceStarted}
+        countdown={countdown}
       />
 
       {/* Authoritative Typing Engine */}
