@@ -183,4 +183,13 @@ export const api = {
     apiFetch('/economy/battle-pass/claim', { method: 'POST', body: JSON.stringify({ tierLevel }) }),
   upgradeBattlePassSandbox: (provider: string = 'STRIPE_SANDBOX') =>
     apiFetch('/economy/sandbox-upgrade', { method: 'POST', body: JSON.stringify({ provider }) }),
+
+  // System & Oversight
+  getHealth: () => apiFetch('/health'),
+  getAuditLogs: (limit: number = 50, skip: number = 0) =>
+    apiFetch(`/audit/logs?limit=${limit}&skip=${skip}`),
+  verifyOrganization: (id: string, isVerified: boolean, reason?: string) =>
+    apiFetch(`/organizations/${id}/verify`, { method: 'PATCH', body: JSON.stringify({ isVerified, reason }) }),
+  updateOrganizationStatus: (id: string, isSuspended: boolean, reason?: string) =>
+    apiFetch(`/organizations/${id}/status`, { method: 'PATCH', body: JSON.stringify({ isSuspended, reason }) }),
 };

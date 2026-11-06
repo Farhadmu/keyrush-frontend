@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { api, getCurrentUser, UserSession } from '../../lib/api';
+import { checkGamingAccess } from '../../lib/roleGuard';
 import ThreeGarage, { GarageCarItem } from '../../game/three/ThreeGarage';
 import { VehicleCustomizationConfig } from '../../game/three/VehicleFactory';
 import {
@@ -34,6 +35,12 @@ export default function GaragePage() {
   });
 
   useEffect(() => {
+    // Role-based access control: Organizers & Admins cannot access racer 3D garage
+    const access = checkGamingAccess();
+    if (!access.allowed && access.redirectUrl) {
+      window.location.href = access.redirectUrl;
+      return;
+    }
     const user = getCurrentUser();
     setCurrentUser(user);
     loadGarageData();

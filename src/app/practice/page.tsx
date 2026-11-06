@@ -5,6 +5,7 @@ import ThreeArena from '../../game/three/ThreeArena';
 import { RacerVisualState } from '../../game/RacingCanvas';
 import TypingEngine from '../../features/typing/TypingEngine';
 import { api, getCurrentUser } from '../../lib/api';
+import { checkGamingAccess } from '../../lib/roleGuard';
 import {
   RefreshCw,
   Play,
@@ -157,6 +158,13 @@ export default function PracticePage() {
 
   // Load user session on mount
   useEffect(() => {
+    // Role-based access control: Organizers & Admins cannot play practice/racer mode
+    const access = checkGamingAccess();
+    if (!access.allowed && access.redirectUrl) {
+      window.location.href = access.redirectUrl;
+      return;
+    }
+
     const user = getCurrentUser();
     if (user) {
       setPlayerName(user.username);

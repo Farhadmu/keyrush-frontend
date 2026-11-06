@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { getCurrentUser, clearAuthSession, UserSession } from '../lib/api';
+import { getUserRole, AppRole } from '../lib/roleGuard';
 import {
   Trophy,
   Users,
@@ -18,6 +19,8 @@ import {
   Bell,
   Car,
   Sparkles,
+  Award,
+  Layers,
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -36,17 +39,45 @@ export default function Navbar() {
     window.location.href = '/';
   };
 
-  const isSuperAdmin = user?.roles?.includes('SUPER_ADMIN') || user?.roles?.includes('PLATFORM_MODERATOR');
+  const role: AppRole = getUserRole(user);
+  const isSuperAdmin = role === 'SUPER_ADMIN';
+  const isOrganizer = role === 'ORGANIZER';
 
-  const navLinks = [
-    { name: 'Practice', href: '/practice', icon: Zap },
-    { name: 'Multiplayer', href: '/multiplayer', icon: Flame },
-    { name: '3D Garage', href: '/garage', icon: Car },
-    { name: 'Battle Pass', href: '/battlepass', icon: Sparkles },
-    { name: 'Competitions', href: '/competitions', icon: Trophy },
-    { name: 'Leaderboard', href: '/leaderboard', icon: Flag },
-    { name: 'Organizations', href: '/organizations', icon: Users },
-  ];
+  // Role-specific navigation links:
+  // Organizers and Super Admins manage competitions and platform integrity,
+  // and do NOT participate in player gaming/practice/garage.
+  const navLinks = (() => {
+    if (isOrganizer) {
+      return [
+        { name: 'Organizer Hub', href: '/organizer', icon: LayoutDashboard },
+        { name: 'Tournaments', href: '/competitions', icon: Trophy },
+        { name: 'Organizations', href: '/organizations', icon: Users },
+        { name: 'Certificates', href: '/certificates', icon: Award },
+        { name: 'Leaderboard', href: '/leaderboard', icon: Flag },
+      ];
+    }
+    if (isSuperAdmin) {
+      return [
+        { name: 'Admin Console', href: '/admin', icon: Shield },
+        { name: 'Organizations', href: '/organizations', icon: Users },
+        { name: 'Competitions', href: '/competitions', icon: Trophy },
+        { name: 'Leaderboard', href: '/leaderboard', icon: Flag },
+      ];
+    }
+    // Default racer / competitor / visitor links
+    return [
+      { name: 'Practice', href: '/practice', icon: Zap },
+      { name: 'Multiplayer', href: '/multiplayer', icon: Flame },
+      { name: '3D Garage', href: '/garage', icon: Car },
+      { name: 'Battle Pass', href: '/battlepass', icon: Sparkles },
+      { name: 'Competitions', href: '/competitions', icon: Trophy },
+      { name: 'Leaderboard', href: '/leaderboard', icon: Flag },
+      { name: 'Organizations', href: '/organizations', icon: Users },
+    ];
+  })();
+
+  const dashboardHref = isSuperAdmin ? '/admin' : isOrganizer ? '/organizer' : '/dashboard';
+  const dashboardLabel = isSuperAdmin ? 'Admin Console' : isOrganizer ? 'Organizer Hub' : 'Dashboard';
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-white/10 bg-background/85 backdrop-blur-xl">
@@ -91,34 +122,36 @@ export default function Navbar() {
           {user ? (
             <div className="flex items-center space-x-2 sm:space-x-3">
               <Link
-                href="/dashboard"
+                href={dashboardHref}
                 className={`flex items-center space-x-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all ${
-                  pathname.startsWith('/dashboard')
-                    ? 'border-accent bg-accent/10 text-accent'
+                  pathname.startsWith(dashboardHref)
+                    ? isSuperAdmin
+                      ? 'border-secondary bg-secondary/20 text-secondary'
+                      : isOrganizer
+                      ? 'border-amber-400 bg-amber-400/20 text-amber-300'
+                      : 'border-accent bg-accent/10 text-accent'
                     : 'border-white/10 bg-surface text-text-muted hover:text-text hover:bg-surface-light'
                 }`}
               >
-                <LayoutDashboard className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Dashboard</span>
-              </Link>
-
-              {isSuperAdmin && (
-                <Link
-                  href="/admin"
-                  className={`flex items-center space-x-1 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-all ${
-                    pathname.startsWith('/admin')
-                      ? 'border-secondary bg-secondary/20 text-secondary'
-                      : 'border-secondary/30 bg-secondary/10 text-secondary hover:bg-secondary/20'
-                  }`}
-                >
+                {isSuperAdmin ? (
                   <Shield className="h-3.5 w-3.5" />
-                  <span className="hidden md:inline">Admin</span>
-                </Link>
-              )}
+                ) : isOrganizer ? (
+                  <LayoutDashboard className="h-3.5 w-3.5" />
+                ) : (
+                  <LayoutDashboard className="h-3.5 w-3.5" />
+                )}
+                <span className="hidden sm:inline">{dashboardLabel}</span>
+              </Link>
 
               <div className="hidden sm:flex flex-col text-right">
                 <span className="text-xs font-bold text-text">{user.username}</span>
-                <span className="text-[10px] font-mono text-accent">RACER #{user.id.slice(-4)}</span>
+                {isSuperAdmin ? (
+                  <span className="text-[10px] font-mono font-bold text-secondary uppercase tracking-wider">SUPER ADMIN</span>
+                ) : isOrganizer ? (
+                  <span className="text-[10px] font-mono font-bold text-amber-400 uppercase tracking-wider">ORGANIZER</span>
+                ) : (
+                  <span className="text-[10px] font-mono text-accent">RACER #{user.id.slice(-4)}</span>
+                )}
               </div>
 
               <button
@@ -177,24 +210,15 @@ export default function Navbar() {
             );
           })}
           {user && (
-            <>
-              <Link
-                href="/dashboard"
-                className="flex items-center space-x-3 rounded-lg px-3 py-2.5 text-sm font-medium text-accent hover:bg-surface-light"
-              >
-                <LayoutDashboard className="h-4 w-4" />
-                <span>My Dashboard</span>
-              </Link>
-              {isSuperAdmin && (
-                <Link
-                  href="/admin"
-                  className="flex items-center space-x-3 rounded-lg px-3 py-2.5 text-sm font-medium text-secondary hover:bg-surface-light"
-                >
-                  <Shield className="h-4 w-4" />
-                  <span>Admin Portal</span>
-                </Link>
-              )}
-            </>
+            <Link
+              href={dashboardHref}
+              className={`flex items-center space-x-3 rounded-lg px-3 py-2.5 text-sm font-medium hover:bg-surface-light ${
+                isSuperAdmin ? 'text-secondary' : isOrganizer ? 'text-amber-400' : 'text-accent'
+              }`}
+            >
+              <LayoutDashboard className="h-4 w-4" />
+              <span>{dashboardLabel}</span>
+            </Link>
           )}
         </div>
       )}

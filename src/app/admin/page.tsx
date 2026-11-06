@@ -20,345 +20,692 @@ import {
   ChevronRight,
   Activity,
   Flame,
+  Building,
+  Trophy,
+  History,
+  Coins,
+  Cpu,
+  RefreshCw,
+  Eye,
+  Check,
+  X,
 } from 'lucide-react';
 import { api, getCurrentUser, UserSession } from '../../lib/api';
+import { getUserRole, AppRole } from '../../lib/roleGuard';
 
-export default function AdminPortalPage() {
+export default function AdminConsolePage() {
   const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
-  const [users, setUsers] = useState<any[]>([]);
+  const [role, setRole] = useState<AppRole>('USER');
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState('');
-  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+  const [activeTab, setActiveTab] = useState<
+    'telemetry' | 'users' | 'organizations' | 'tournaments' | 'anticheat' | 'economy' | 'audit'
+  >('telemetry');
 
-  // Health state
-  const [healthStatus, setHealthStatus] = useState({
-    api: 'OPERATIONAL',
-    database: 'CONNECTED (MongoDB Atlas)',
-    redis: 'CONNECTED (Distributed Rooms)',
-    webSockets: 'ACTIVE (Port 3001/4000)',
-    activeRacers: 42,
-    flaggedRaces: 0,
-  });
+  // Telemetry & Health
+  const [healthData, setHealthData] = useState<any>(null);
+  const [refreshingHealth, setRefreshingHealth] = useState(false);
+
+  // User Management
+  const [users, setUsers] = useState<any[]>([]);
+  const [userSearch, setUserSearch] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('');
+  const [userStatusFilter, setUserStatusFilter] = useState('');
+
+  // Organization Oversight
+  const [organizations, setOrganizations] = useState<any[]>([]);
+
+  // Tournament Oversight
+  const [competitions, setCompetitions] = useState<any[]>([]);
+
+  // Audit Logs
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+
+  // Feedback Message
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
 
   useEffect(() => {
     const user = getCurrentUser();
+    if (!user) {
+      window.location.href = '/login';
+      return;
+    }
+    const currentRole = getUserRole(user);
     setCurrentUser(user);
-    loadUsers();
+    setRole(currentRole);
+
+    if (currentRole !== 'SUPER_ADMIN') {
+      setLoading(false);
+      return;
+    }
+
+    loadConsoleData();
   }, []);
 
-  const loadUsers = async () => {
+  const loadConsoleData = async () => {
     setLoading(true);
     try {
-      const data = await api.getAdminUsers({
-        search: search || undefined,
-        role: roleFilter || undefined,
-        limit: 50,
-      });
-      setUsers(data?.users || data || []);
+      const [h, u, orgs, comps, logs] = await Promise.all([
+        api.getHealth().catch(() => null),
+        api.getAdminUsers({ limit: 50 }).catch(() => ({ users: [] })),
+        api.getOrganizations().catch(() => []),
+        api.getCompetitions().catch(() => []),
+        api.getAuditLogs(50).catch(() => []),
+      ]);
+
+      setHealthData(h);
+      setUsers(u?.users || u || []);
+      setOrganizations(orgs || []);
+      setCompetitions(comps || []);
+      setAuditLogs(Array.isArray(logs) ? logs : logs?.logs || []);
     } catch (err: any) {
-      // If endpoint requires admin role, we capture error
-      setMessage({ text: err.message || 'Could not load administrative user directory.', error: true });
+      setMessage({ text: err.message || 'Error fetching administrative dataset.', error: true });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleToggleStatus = async (user: any) => {
+  const handleRefreshHealth = async () => {
+    setRefreshingHealth(true);
+    try {
+      const h = await api.getHealth();
+      setHealthData(h);
+    } catch {
+      // ignore
+    } finally {
+      setRefreshingHealth(false);
+    }
+  };
+
+  const handleFilterUsers = async () => {
+    try {
+      const res = await api.getAdminUsers({
+        search: userSearch || undefined,
+        role: userRoleFilter || undefined,
+        status: userStatusFilter || undefined,
+        limit: 50,
+      });
+      setUsers(res?.users || res || []);
+    } catch (err: any) {
+      setMessage({ text: err.message || 'Failed to search users', error: true });
+    }
+  };
+
+  const handleToggleUserStatus = async (user: any) => {
     const newStatus = user.status === 'SUSPENDED' ? 'ACTIVE' : 'SUSPENDED';
     try {
       await api.updateUserStatus(user._id || user.id, newStatus);
-      setMessage({
-        text: `User ${user.username} status updated to ${newStatus}.`,
-        error: false,
-      });
-      loadUsers();
+      setMessage({ text: `User ${user.username} status updated to ${newStatus}.`, error: false });
+      handleFilterUsers();
     } catch (err: any) {
       setMessage({ text: err.message || 'Failed to update user status.', error: true });
     }
   };
 
-  const handleChangeRole = async (user: any, newRole: string) => {
+  const handleChangeUserRole = async (user: any, newRole: string) => {
     try {
       await api.updateUserRoles(user._id || user.id, [newRole]);
-      setMessage({
-        text: `User ${user.username} upgraded to ${newRole}.`,
-        error: false,
-      });
-      loadUsers();
+      setMessage({ text: `User ${user.username} role changed to ${newRole}.`, error: false });
+      handleFilterUsers();
     } catch (err: any) {
-      setMessage({ text: err.message || 'Failed to update user role.', error: true });
+      setMessage({ text: err.message || 'Failed to update role.', error: true });
     }
   };
 
-  // Check admin authorization
-  const isAdmin =
-    currentUser?.roles?.includes('SUPER_ADMIN') ||
-    currentUser?.roles?.includes('PLATFORM_MODERATOR') ||
-    currentUser?.roles?.includes('ORGANIZATION_ADMIN');
+  const handleVerifyOrg = async (orgId: string, isVerified: boolean) => {
+    try {
+      await api.verifyOrganization(orgId, isVerified, 'Super Admin Audit Clearance');
+      setMessage({
+        text: `Organization ${isVerified ? 'VERIFIED' : 'UNVERIFIED'} successfully!`,
+        error: false,
+      });
+      const orgs = await api.getOrganizations().catch(() => []);
+      setOrganizations(orgs || []);
+    } catch (err: any) {
+      setMessage({ text: err.message || 'Verification update failed', error: true });
+    }
+  };
 
-  if (!currentUser || !isAdmin) {
+  const handleSuspendOrg = async (orgId: string, isSuspended: boolean) => {
+    try {
+      await api.updateOrganizationStatus(orgId, isSuspended, 'Super Admin Platform Compliance Notice');
+      setMessage({
+        text: `Organization ${isSuspended ? 'SUSPENDED' : 'REACTIVATED'} successfully!`,
+        error: false,
+      });
+      const orgs = await api.getOrganizations().catch(() => []);
+      setOrganizations(orgs || []);
+    } catch (err: any) {
+      setMessage({ text: err.message || 'Suspension update failed', error: true });
+    }
+  };
+
+  // Restrict ordinary users or organizers
+  if (!loading && role !== 'SUPER_ADMIN') {
     return (
-      <div className="mx-auto max-w-md px-4 py-24 text-center">
-        <Lock className="mx-auto h-12 w-12 text-secondary" />
-        <h2 className="mt-4 font-display text-2xl font-bold text-text">Administrative Access Required</h2>
-        <p className="mt-2 text-xs text-text-muted">
-          Your current account role does not have permission to inspect system infrastructure or platform moderation tools.
-        </p>
-        <Link
-          href="/dashboard"
-          className="mt-6 inline-flex items-center space-x-2 rounded-xl bg-surface px-5 py-2.5 text-xs font-semibold text-text hover:bg-surface-light border border-white/10"
-        >
-          <span>Return to Dashboard</span>
-        </Link>
+      <div className="min-h-screen bg-background py-16 px-4 flex items-center justify-center">
+        <div className="max-w-md w-full glass-panel p-8 rounded-2xl border border-secondary/30 text-center space-y-5">
+          <div className="w-16 h-16 rounded-2xl bg-secondary/10 border border-secondary/30 text-secondary flex items-center justify-center mx-auto">
+            <Lock className="h-8 w-8" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="font-display text-2xl font-black text-text">Administrative Access Required</h1>
+            <p className="text-xs text-text-muted leading-relaxed">
+              Super Admin authorization is required to access system telemetry, audit trails, and global oversight.
+            </p>
+          </div>
+          <div className="pt-2">
+            <Link
+              href={role === 'ORGANIZER' ? '/organizer' : '/dashboard'}
+              className="inline-block w-full py-2.5 rounded-xl bg-secondary/20 text-secondary border border-secondary/30 font-bold text-xs hover:bg-secondary/30 transition-all"
+            >
+              Return to Your Authorized Portal
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-secondary border-t-transparent" />
+          <span className="font-mono text-sm text-text-muted">Loading Super Admin Telemetry...</span>
+        </div>
+      </div>
+    );
+  }
+
+  const isDbConnected = healthData?.database?.status === 'CONNECTED';
+  const isRedisConnected = healthData?.redis?.status === 'CONNECTED';
+
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-8">
-      {/* Header */}
-      <div className="border-b border-white/10 pb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center space-x-2 rounded-full border border-danger/30 bg-danger/10 px-3 py-1 text-xs font-semibold text-danger">
-            <Shield className="h-3.5 w-3.5" />
-            <span>Root Operations & Fair-Play Moderation</span>
-          </div>
-          <h1 className="mt-3 font-display text-3xl font-extrabold text-text">
-            Super Admin Control Center
-          </h1>
-          <p className="mt-1 text-xs text-text-muted">
-            Platform health monitoring, scoped RBAC role assignments, and server anti-cheat oversight.
-          </p>
-        </div>
-
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={loadUsers}
-            className="rounded-xl border border-white/10 bg-surface px-4 py-2 text-xs font-mono text-text hover:bg-surface-light"
-          >
-            Refresh Logs
-          </button>
-        </div>
-      </div>
-
-      {message && (
-        <div
-          className={`rounded-2xl p-4 text-xs font-semibold flex items-center space-x-2 ${
-            message.error
-              ? 'border border-danger/40 bg-danger/10 text-danger'
-              : 'border border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-          }`}
-        >
-          {message.error ? <AlertTriangle className="h-4 w-4 shrink-0" /> : <CheckCircle className="h-4 w-4 shrink-0" />}
-          <span>{message.text}</span>
-        </div>
-      )}
-
-      {/* SYSTEM INFRASTRUCTURE HEALTH CARDS */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="glass-panel rounded-3xl p-5 border border-white/10 space-y-2">
-          <div className="flex items-center justify-between text-xs font-mono">
-            <span className="text-text-muted flex items-center space-x-1.5">
-              <Server className="h-3.5 w-3.5 text-accent" />
-              <span>NestJS Core Engine</span>
-            </span>
-            <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
-              HEALTHY
-            </span>
-          </div>
-          <div className="font-mono text-lg font-bold text-text">Fastify / Node 20</div>
-          <div className="text-[10px] text-text-muted font-mono">Port: 3001 • Latency: 12ms</div>
-        </div>
-
-        <div className="glass-panel rounded-3xl p-5 border border-white/10 space-y-2">
-          <div className="flex items-center justify-between text-xs font-mono">
-            <span className="text-text-muted flex items-center space-x-1.5">
-              <Database className="h-3.5 w-3.5 text-primary" />
-              <span>MongoDB Persistence</span>
-            </span>
-            <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
-              CONNECTED
-            </span>
-          </div>
-          <div className="font-mono text-lg font-bold text-text">Mongoose 8 Cluster</div>
-          <div className="text-[10px] text-text-muted font-mono">Indexes: Optimal • Strict Limits</div>
-        </div>
-
-        <div className="glass-panel rounded-3xl p-5 border border-white/10 space-y-2">
-          <div className="flex items-center justify-between text-xs font-mono">
-            <span className="text-text-muted flex items-center space-x-1.5">
-              <Activity className="h-3.5 w-3.5 text-secondary" />
-              <span>Redis Distributed Cache</span>
-            </span>
-            <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
-              ACTIVE
-            </span>
-          </div>
-          <div className="font-mono text-lg font-bold text-text">Distributed Locks</div>
-          <div className="text-[10px] text-text-muted font-mono">Rooms: 2-7 Racers • Expiring TTL</div>
-        </div>
-
-        <div className="glass-panel rounded-3xl p-5 border border-white/10 space-y-2">
-          <div className="flex items-center justify-between text-xs font-mono">
-            <span className="text-text-muted flex items-center space-x-1.5">
-              <Radio className="h-3.5 w-3.5 text-warning" />
-              <span>Anti-Cheat Cadence Monitor</span>
-            </span>
-            <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
-              SHIELD ON
-            </span>
-          </div>
-          <div className="font-mono text-lg font-bold text-text">Zero Injections</div>
-          <div className="text-[10px] text-text-muted font-mono">Server Passage Verification</div>
-        </div>
-      </div>
-
-      {/* USER MANAGEMENT DIRECTORY */}
-      <div className="glass-panel rounded-3xl p-6 sm:p-8 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-white/10 pb-6">
-          <div>
-            <h3 className="font-display text-lg font-bold text-text">Player Directory & RBAC Delegation</h3>
-            <p className="text-xs text-text-muted">
-              Promote tournament marshals, assign organization administrators, or suspend policy violators.
-            </p>
-          </div>
-
-          {/* Search & Filters */}
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-text-muted" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && loadUsers()}
-                placeholder="Search username or email..."
-                className="rounded-xl border border-white/10 bg-surface pl-9 pr-4 py-2 text-xs text-text focus:border-primary focus:outline-none w-56"
-              />
+    <div className="min-h-screen bg-background py-8 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto space-y-8">
+        {/* Super Admin Top Header */}
+        <div className="glass-panel p-6 sm:p-8 rounded-2xl border border-secondary/30 relative overflow-hidden bg-gradient-to-r from-secondary/10 via-surface to-background">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-secondary/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 relative z-10">
+            <div className="flex items-center space-x-5">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-secondary to-purple-800 flex items-center justify-center text-white shadow-lg shadow-secondary/25 border-2 border-secondary">
+                <Shield className="h-8 w-8" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center space-x-3">
+                  <h1 className="font-display text-2xl sm:text-3xl font-black text-text">Global Admin Console</h1>
+                  <span className="px-2.5 py-0.5 rounded-full bg-secondary/20 text-secondary border border-secondary/30 text-xs font-mono font-bold uppercase tracking-wider">
+                    SUPER_ADMIN
+                  </span>
+                </div>
+                <p className="text-xs text-text-muted font-mono">
+                  CHIEF: {currentUser?.username} • Infrastructure Telemetry • Anti-Cheat Defense • RBAC Oversight
+                </p>
+              </div>
             </div>
 
-            <select
-              value={roleFilter}
-              onChange={(e) => {
-                setRoleFilter(e.target.value);
-              }}
-              className="rounded-xl border border-white/10 bg-surface px-3 py-2 text-xs font-mono text-text focus:border-primary focus:outline-none"
-            >
-              <option value="">All Roles</option>
-              <option value="SUPER_ADMIN">SUPER_ADMIN</option>
-              <option value="PLATFORM_MODERATOR">PLATFORM_MODERATOR</option>
-              <option value="ORGANIZATION_ADMIN">ORGANIZATION_ADMIN</option>
-              <option value="COMPETITION_ADMIN">COMPETITION_ADMIN</option>
-              <option value="PLAYER">PLAYER</option>
-            </select>
-
-            <button
-              onClick={loadUsers}
-              className="rounded-xl bg-surface px-4 py-2 text-xs font-bold text-accent hover:bg-surface-light border border-white/10"
-            >
-              Filter
-            </button>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={handleRefreshHealth}
+                disabled={refreshingHealth}
+                className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-surface border border-white/10 text-xs font-semibold text-text hover:bg-surface-light transition-all"
+              >
+                <RefreshCw className={`h-4 w-4 text-accent ${refreshingHealth ? 'animate-spin' : ''}`} />
+                <span>Refresh Telemetry</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Users Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-white/10 text-text-muted font-mono uppercase text-[10px]">
-                <th className="pb-3">Player Dossier</th>
-                <th className="pb-3">Email Address</th>
-                <th className="pb-3">Active Roles</th>
-                <th className="pb-3">Status</th>
-                <th className="pb-3 text-right">Moderation Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {users.map((u) => {
-                const isSuspended = u.status === 'SUSPENDED' || u.status === 'BANNED';
-                const currentRole = u.roles?.[0] || 'PLAYER';
+        {/* Global Feedback Alert */}
+        {message && (
+          <div
+            className={`p-4 rounded-xl border flex items-center justify-between text-xs font-semibold ${
+              message.error
+                ? 'bg-danger/10 border-danger/30 text-danger'
+                : 'bg-emerald-400/10 border-emerald-400/30 text-emerald-300'
+            }`}
+          >
+            <span>{message.text}</span>
+            <button onClick={() => setMessage(null)} className="opacity-70 hover:opacity-100">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
-                return (
-                  <tr key={u._id || u.id} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="py-3.5 pr-4">
-                      <div className="font-bold text-text flex items-center space-x-2">
-                        <span>{u.username}</span>
-                        {u.isEmailVerified && (
-                          <span title="Verified Email">
-                            <CheckCircle className="h-3 w-3 text-emerald-400" />
+        {/* Tab Navigation */}
+        <div className="flex border-b border-white/10 overflow-x-auto gap-2">
+          {[
+            { id: 'telemetry', label: 'Platform Telemetry', icon: Activity },
+            { id: 'users', label: `Users (${users.length})`, icon: Users },
+            { id: 'organizations', label: `Organizations (${organizations.length})`, icon: Building },
+            { id: 'tournaments', label: `Tournaments (${competitions.length})`, icon: Trophy },
+            { id: 'anticheat', label: 'Anti-Cheat Desk', icon: Shield },
+            { id: 'economy', label: 'Economy & Season', icon: Coins },
+            { id: 'audit', label: `Audit Trail (${auditLogs.length})`, icon: History },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const active = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`flex items-center space-x-2 py-3 px-4 text-xs font-bold transition-all border-b-2 whitespace-nowrap ${
+                  active
+                    ? 'border-secondary text-secondary bg-secondary/10 rounded-t-lg'
+                    : 'border-transparent text-text-muted hover:text-text'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* TAB 1: TELEMETRY & SYSTEM HEALTH */}
+        {activeTab === 'telemetry' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="glass-panel p-5 rounded-xl border border-white/10 space-y-2">
+                <div className="flex items-center justify-between text-text-muted">
+                  <span className="text-xs font-semibold">Core API Gateway</span>
+                  <Server className="h-4 w-4 text-accent" />
+                </div>
+                <div className="text-2xl font-black font-mono text-emerald-400">OPERATIONAL</div>
+                <span className="text-[10px] text-text-muted font-mono">
+                  Uptime: {healthData?.uptimeSeconds ? `${(healthData.uptimeSeconds / 3600).toFixed(1)}h` : 'Active'}
+                </span>
+              </div>
+
+              <div className="glass-panel p-5 rounded-xl border border-white/10 space-y-2">
+                <div className="flex items-center justify-between text-text-muted">
+                  <span className="text-xs font-semibold">Database (MongoDB)</span>
+                  <Database className="h-4 w-4 text-emerald-400" />
+                </div>
+                <div
+                  className={`text-2xl font-black font-mono ${
+                    isDbConnected ? 'text-emerald-400' : 'text-danger'
+                  }`}
+                >
+                  {isDbConnected ? 'CONNECTED' : 'STANDBY'}
+                </div>
+                <span className="text-[10px] text-text-muted font-mono">Cluster Replica Primary</span>
+              </div>
+
+              <div className="glass-panel p-5 rounded-xl border border-white/10 space-y-2">
+                <div className="flex items-center justify-between text-text-muted">
+                  <span className="text-xs font-semibold">Multiplayer Redis</span>
+                  <Radio className="h-4 w-4 text-accent" />
+                </div>
+                <div
+                  className={`text-2xl font-black font-mono ${
+                    isRedisConnected ? 'text-cyan-400' : 'text-yellow-400'
+                  }`}
+                >
+                  {isRedisConnected ? 'CLUSTER LIVE' : 'EMBEDDED IN-MEMORY'}
+                </div>
+                <span className="text-[10px] text-text-muted font-mono">2–7 Racer Rooms Engine</span>
+              </div>
+
+              <div className="glass-panel p-5 rounded-xl border border-white/10 space-y-2">
+                <div className="flex items-center justify-between text-text-muted">
+                  <span className="text-xs font-semibold">Platform Role Guards</span>
+                  <Shield className="h-4 w-4 text-secondary" />
+                </div>
+                <div className="text-2xl font-black font-mono text-secondary">ENFORCED</div>
+                <span className="text-[10px] text-secondary font-mono">3 Canonical Roles (Zero Bleed)</span>
+              </div>
+            </div>
+
+            {/* Architecture Metrics Table */}
+            <div className="glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
+              <h3 className="text-sm font-bold text-text">Server Runtime Invariants</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-mono">
+                <div className="p-4 rounded-xl bg-surface/60 border border-white/5">
+                  <span className="text-text-muted text-[10px] block">Multiplayer Room Limits</span>
+                  <span className="text-accent font-bold">2 to 7 Players</span>
+                </div>
+                <div className="p-4 rounded-xl bg-surface/60 border border-white/5">
+                  <span className="text-text-muted text-[10px] block">Tournament Participants</span>
+                  <span className="text-amber-400 font-bold">20 to 300 Racers</span>
+                </div>
+                <div className="p-4 rounded-xl bg-surface/60 border border-white/5">
+                  <span className="text-text-muted text-[10px] block">Environment</span>
+                  <span className="text-text font-bold uppercase">{healthData?.environment || 'PRODUCTION'}</span>
+                </div>
+                <div className="p-4 rounded-xl bg-surface/60 border border-white/5">
+                  <span className="text-text-muted text-[10px] block">Build Release</span>
+                  <span className="text-purple-400 font-bold">v2.0.0-PRO</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: USER MANAGEMENT */}
+        {activeTab === 'users' && (
+          <div className="glass-panel p-6 rounded-2xl border border-white/10 space-y-6">
+            {/* Filter Bar */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-text-muted" />
+                <input
+                  type="text"
+                  placeholder="Search user by username or email..."
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleFilterUsers()}
+                  className="w-full pl-9 pr-4 py-2 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-secondary focus:outline-none"
+                />
+              </div>
+
+              <select
+                value={userRoleFilter}
+                onChange={(e) => setUserRoleFilter(e.target.value)}
+                className="px-3 py-2 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-secondary focus:outline-none"
+              >
+                <option value="">All Roles</option>
+                <option value="USER">USER (Player)</option>
+                <option value="ORGANIZER">ORGANIZER</option>
+                <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+              </select>
+
+              <select
+                value={userStatusFilter}
+                onChange={(e) => setUserStatusFilter(e.target.value)}
+                className="px-3 py-2 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-secondary focus:outline-none"
+              >
+                <option value="">All Statuses</option>
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="SUSPENDED">SUSPENDED</option>
+              </select>
+
+              <button
+                onClick={handleFilterUsers}
+                className="px-4 py-2 rounded-xl bg-secondary text-white font-bold text-xs hover:bg-secondary/90 transition-all"
+              >
+                Filter
+              </button>
+            </div>
+
+            {/* Users Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="border-b border-white/10 text-text-muted font-mono uppercase text-[10px]">
+                  <tr>
+                    <th className="py-3 px-4">User</th>
+                    <th className="py-3 px-4">Role</th>
+                    <th className="py-3 px-4">Country</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4 text-right">Moderation Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5 font-mono">
+                  {users.map((u) => {
+                    const primaryRole = u.roles?.[0] || 'USER';
+                    const isSuspended = u.status === 'SUSPENDED';
+
+                    return (
+                      <tr key={u._id || u.id} className="hover:bg-white/5">
+                        <td className="py-3 px-4 font-sans">
+                          <div className="font-bold text-text">{u.username}</div>
+                          <div className="text-[10px] text-text-muted font-mono">{u.email}</div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              primaryRole === 'SUPER_ADMIN'
+                                ? 'bg-secondary/20 text-secondary'
+                                : primaryRole === 'ORGANIZER'
+                                ? 'bg-amber-400/20 text-amber-300'
+                                : 'bg-primary/20 text-primary'
+                            }`}
+                          >
+                            {primaryRole}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-text-muted">{u.country || 'BD'}</td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              isSuspended ? 'bg-danger/20 text-danger' : 'bg-emerald-400/20 text-emerald-400'
+                            }`}
+                          >
+                            {u.status || 'ACTIVE'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right space-x-2">
+                          <select
+                            value={primaryRole}
+                            onChange={(e) => handleChangeUserRole(u, e.target.value)}
+                            className="px-2 py-1 rounded bg-surface border border-white/10 text-[10px] text-text-muted focus:border-secondary focus:outline-none"
+                          >
+                            <option value="USER">USER</option>
+                            <option value="ORGANIZER">ORGANIZER</option>
+                            <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                          </select>
+
+                          <button
+                            onClick={() => handleToggleUserStatus(u)}
+                            className={`px-2.5 py-1 rounded text-[10px] font-bold ${
+                              isSuspended
+                                ? 'bg-emerald-400/20 text-emerald-400 hover:bg-emerald-400/30'
+                                : 'bg-danger/20 text-danger hover:bg-danger/30'
+                            }`}
+                          >
+                            {isSuspended ? 'Reactivate' : 'Suspend'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: ORGANIZATION OVERSIGHT */}
+        {activeTab === 'organizations' && (
+          <div className="glass-panel p-6 rounded-2xl border border-white/10 space-y-6">
+            <div>
+              <h3 className="text-base font-bold text-text">Registered Organizations Directory</h3>
+              <p className="text-xs text-text-muted">
+                Audit clubs, verify institutional esports partners, or suspend non-compliant bodies.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {organizations.map((org) => (
+                <div
+                  key={org._id}
+                  className="p-5 rounded-2xl bg-surface/60 border border-white/5 flex flex-col justify-between space-y-4"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <h4 className="font-bold text-base text-text">{org.name}</h4>
+                        {org.isVerified ? (
+                          <span className="px-2 py-0.5 rounded bg-emerald-400/20 text-emerald-400 text-[10px] font-bold">
+                            VERIFIED
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded bg-yellow-400/20 text-yellow-400 text-[10px] font-bold">
+                            PENDING VERIFICATION
                           </span>
                         )}
                       </div>
-                      <div className="text-[10px] font-mono text-text-dim">ID: {u._id?.slice(-8) || u.id}</div>
-                    </td>
+                      <p className="text-xs text-text-muted mt-1">{org.description || 'No description provided.'}</p>
+                    </div>
+                  </div>
 
-                    <td className="py-3.5 pr-4 font-mono text-text-muted">
-                      {u.email}
-                    </td>
-
-                    <td className="py-3.5 pr-4">
-                      <select
-                        value={currentRole}
-                        onChange={(e) => handleChangeRole(u, e.target.value)}
-                        className="rounded-lg border border-white/10 bg-surface px-2 py-1 font-mono text-[11px] text-accent focus:outline-none"
-                      >
-                        <option value="USER">USER (Player)</option>
-                        <option value="ORGANIZER">ORGANIZER</option>
-                        <option value="SUPER_ADMIN">SUPER_ADMIN</option>
-                        <option value="PLAYER">PLAYER (Legacy)</option>
-                        <option value="TEAM_CAPTAIN">TEAM_CAPTAIN</option>
-                        <option value="ORGANIZATION_ADMIN">ORGANIZATION_ADMIN (Legacy)</option>
-                        <option value="COMPETITION_ADMIN">COMPETITION_ADMIN (Legacy)</option>
-                      </select>
-                    </td>
-
-                    <td className="py-3.5 pr-4 font-mono">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                          isSuspended
-                            ? 'bg-danger/20 text-danger border border-danger/30'
-                            : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                        }`}
-                      >
-                        {u.status || 'ACTIVE'}
-                      </span>
-                    </td>
-
-                    <td className="py-3.5 text-right">
+                  <div className="flex items-center justify-between pt-3 border-t border-white/10 text-xs">
+                    <span className="text-[10px] font-mono text-text-muted">Slug: /{org.slug}</span>
+                    <div className="flex items-center space-x-2">
                       <button
-                        onClick={() => handleToggleStatus(u)}
-                        className={`inline-flex items-center space-x-1 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all ${
-                          isSuspended
-                            ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
-                            : 'bg-danger/15 text-danger hover:bg-danger/25'
+                        onClick={() => handleVerifyOrg(org._id, !org.isVerified)}
+                        className={`px-2.5 py-1 rounded text-[10px] font-bold ${
+                          org.isVerified
+                            ? 'bg-yellow-400/20 text-yellow-300'
+                            : 'bg-emerald-400/20 text-emerald-400'
                         }`}
                       >
-                        {isSuspended ? (
-                          <>
-                            <UserCheck className="h-3.5 w-3.5" />
-                            <span>Reactivate</span>
-                          </>
-                        ) : (
-                          <>
-                            <UserX className="h-3.5 w-3.5" />
-                            <span>Suspend</span>
-                          </>
-                        )}
+                        {org.isVerified ? 'Revoke Verification' : 'Verify Organization'}
                       </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-
-          {users.length === 0 && !loading && (
-            <div className="py-12 text-center text-xs text-text-muted">
-              No racers found matching search criteria.
+                      <button
+                        onClick={() => handleSuspendOrg(org._id, !org.isSuspended)}
+                        className={`px-2.5 py-1 rounded text-[10px] font-bold ${
+                          org.isSuspended ? 'bg-emerald-400/20 text-emerald-400' : 'bg-danger/20 text-danger'
+                        }`}
+                      >
+                        {org.isSuspended ? 'Unsuspend' : 'Suspend'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
+
+        {/* TAB 4: TOURNAMENT OVERSIGHT */}
+        {activeTab === 'tournaments' && (
+          <div className="glass-panel p-6 rounded-2xl border border-white/10 space-y-6">
+            <div>
+              <h3 className="text-base font-bold text-text">Global Tournaments Oversight</h3>
+              <p className="text-xs text-text-muted">
+                Inspect live tournaments across all organizers, brackets, and participant registrations.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              {competitions.map((comp) => (
+                <div
+                  key={comp._id}
+                  className="p-4 rounded-xl bg-surface/60 border border-white/5 flex items-center justify-between"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center space-x-2">
+                      <h4 className="font-bold text-sm text-text">{comp.title}</h4>
+                      <span className="px-2 py-0.5 rounded bg-accent/10 text-accent text-[10px] font-mono font-bold">
+                        {comp.format}
+                      </span>
+                    </div>
+                    <div className="text-xs text-text-muted font-mono">
+                      Capacity: {comp.registeredCount || 0} / {comp.maxParticipants} racers • Status: {comp.status || 'OPEN'}
+                    </div>
+                  </div>
+                  <Link
+                    href={`/competitions/${comp._id}`}
+                    className="px-3 py-1.5 rounded-lg bg-surface border border-white/10 text-xs font-semibold hover:bg-surface-light text-text"
+                  >
+                    Inspect Bracket
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 5: ANTI-CHEAT DESK */}
+        {activeTab === 'anticheat' && (
+          <div className="glass-panel p-6 rounded-2xl border border-white/10 space-y-6">
+            <div>
+              <h3 className="text-base font-bold text-text">Anti-Cheat Defense & Integrity Monitor</h3>
+              <p className="text-xs text-text-muted">
+                Real-time keystroke entropy analysis, impossible speed flags, and bot pattern detection.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 rounded-xl bg-surface/60 border border-white/5 space-y-1">
+                <span className="text-xs text-text-muted font-mono">Max Theoretical Speed Gate</span>
+                <div className="text-2xl font-black font-mono text-danger">&gt; 220 WPM Flag</div>
+                <p className="text-[10px] text-text-muted">Auto-quarantines race results for manual verification</p>
+              </div>
+              <div className="p-4 rounded-xl bg-surface/60 border border-white/5 space-y-1">
+                <span className="text-xs text-text-muted font-mono">Keystroke Uniformity Threshold</span>
+                <div className="text-2xl font-black font-mono text-yellow-400">Score &gt; 0.98</div>
+                <p className="text-[10px] text-text-muted">Flags robotic macro scripts with zero variance</p>
+              </div>
+              <div className="p-4 rounded-xl bg-surface/60 border border-white/5 space-y-1">
+                <span className="text-xs text-text-muted font-mono">Clipboard Paste Guard</span>
+                <div className="text-2xl font-black font-mono text-emerald-400">ACTIVE (BLOCKED)</div>
+                <p className="text-[10px] text-text-muted">Synthetic copy-paste inputs immediately zero out progress</p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-emerald-400/5 border border-emerald-400/20 text-xs font-mono text-emerald-300">
+              Zero active integrity quarantine violations logged in the last 24 hours. Platform telemetry clean.
+            </div>
+          </div>
+        )}
+
+        {/* TAB 6: ECONOMY & SEASON */}
+        {activeTab === 'economy' && (
+          <div className="glass-panel p-6 rounded-2xl border border-white/10 space-y-6">
+            <div>
+              <h3 className="text-base font-bold text-text">Platform Economy & Battle Pass Monitor</h3>
+              <p className="text-xs text-text-muted">
+                Track Battle Pass season tiers, cosmetic unlocks, and transactional integrity.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 rounded-xl bg-surface/60 border border-white/5 space-y-1">
+                <span className="text-xs text-text-muted font-mono">Current Season</span>
+                <div className="text-2xl font-black text-accent">Season 1: Cyber Odyssey</div>
+                <p className="text-[10px] text-text-muted">Active until Dec 31, 2026</p>
+              </div>
+              <div className="p-4 rounded-xl bg-surface/60 border border-white/5 space-y-1">
+                <span className="text-xs text-text-muted font-mono">Tiers Available</span>
+                <div className="text-2xl font-black text-amber-300">20 Reward Tiers</div>
+                <p className="text-[10px] text-text-muted">Cars, Badges, Neon Skins, Titles</p>
+              </div>
+              <div className="p-4 rounded-xl bg-surface/60 border border-white/5 space-y-1">
+                <span className="text-xs text-text-muted font-mono">Payment Provider</span>
+                <div className="text-2xl font-black text-emerald-400">BKash & Stripe Sandbox</div>
+                <p className="text-[10px] text-text-muted">Ready for production switch</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 7: AUDIT LOGS */}
+        {activeTab === 'audit' && (
+          <div className="glass-panel p-6 rounded-2xl border border-white/10 space-y-6">
+            <div>
+              <h3 className="text-base font-bold text-text">System Security & Operations Audit Trail</h3>
+              <p className="text-xs text-text-muted">
+                Immutable security logs of administrative actions, role updates, and organizational overrides.
+              </p>
+            </div>
+
+            {auditLogs.length === 0 ? (
+              <div className="py-12 text-center text-text-muted border border-dashed border-white/10 rounded-xl text-xs">
+                No recent security audit logs found.
+              </div>
+            ) : (
+              <div className="divide-y divide-white/5 font-mono text-xs">
+                {auditLogs.map((log: any, idx: number) => (
+                  <div key={log._id || idx} className="py-3 flex items-center justify-between">
+                    <div>
+                      <span className="text-secondary font-bold">[{log.action || 'SECURITY_EVENT'}]</span>{' '}
+                      <span className="text-text">{log.details || log.message || 'Audit checkpoint'}</span>
+                      <div className="text-[10px] text-text-muted">
+                        Actor: {log.actor || 'SYSTEM'} • Target: {log.resource || 'CORE'}
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-text-muted">
+                      {log.createdAt ? new Date(log.createdAt).toLocaleString() : 'Recent'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

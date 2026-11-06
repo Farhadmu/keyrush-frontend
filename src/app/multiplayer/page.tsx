@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { api, getCurrentUser, UserSession } from '../../lib/api';
+import { checkGamingAccess } from '../../lib/roleGuard';
 import { getRacingSocket } from '../../lib/socket';
 import ThreeArena from '../../game/three/ThreeArena';
 import { RacerVisualState } from '../../game/RacingCanvas';
@@ -30,6 +31,12 @@ export default function MultiplayerPage() {
   const [newRoomLanguage, setNewRoomLanguage] = useState('EN');
 
   useEffect(() => {
+    // Role-based access control: Organizers & Admins cannot participate in multiplayer racing
+    const access = checkGamingAccess();
+    if (!access.allowed && access.redirectUrl) {
+      window.location.href = access.redirectUrl;
+      return;
+    }
     const user = getCurrentUser();
     setCurrentUser(user);
     loadRooms();

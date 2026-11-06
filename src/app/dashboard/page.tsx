@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { api, getCurrentUser, UserSession } from '../../lib/api';
+import { checkGamingAccess } from '../../lib/roleGuard';
 import {
   Trophy,
   Flame,
@@ -24,6 +25,13 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Role-based access control: Organizers & Admins cannot access racer dashboards
+    const access = checkGamingAccess();
+    if (!access.allowed && access.redirectUrl) {
+      window.location.href = access.redirectUrl;
+      return;
+    }
+
     const user = getCurrentUser();
     if (!user) {
       window.location.href = '/login';
@@ -179,6 +187,49 @@ export default function DashboardPage() {
               {stats.totalRaces}
             </div>
             <span className="text-[10px] text-purple-400 font-mono">Ranked Battles</span>
+          </div>
+        </div>
+
+        {/* Competitive Esports Ranked Tier Progression */}
+        <div className="glass-panel p-5 rounded-2xl border border-white/10 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center space-x-2">
+              <Trophy className="h-4 w-4 text-amber-400" />
+              <span className="text-xs font-bold text-text uppercase tracking-wider font-mono">
+                Season 1 Competitive Ladder Tier: {profile?.eloTier || 'BRONZE'} ({profile?.eloRating || 1000} ELO)
+              </span>
+            </div>
+            <span className="text-[10px] font-mono text-text-muted">
+              Next Tier: {(profile?.eloRating || 1000) < 1200 ? 'SILVER at 1200 ELO' : (profile?.eloRating || 1000) < 1400 ? 'GOLD at 1400 ELO' : (profile?.eloRating || 1000) < 1600 ? 'PLATINUM at 1600 ELO' : (profile?.eloRating || 1000) < 1800 ? 'DIAMOND at 1800 ELO' : 'MASTER'}
+            </span>
+          </div>
+          <div className="grid grid-cols-7 gap-1.5 pt-1">
+            {[
+              { name: 'Bronze', color: 'from-amber-700 to-amber-900', elo: '1000+' },
+              { name: 'Silver', color: 'from-slate-400 to-slate-600', elo: '1200+' },
+              { name: 'Gold', color: 'from-yellow-400 to-yellow-600', elo: '1400+' },
+              { name: 'Platinum', color: 'from-cyan-400 to-teal-600', elo: '1600+' },
+              { name: 'Diamond', color: 'from-blue-400 to-indigo-600', elo: '1800+' },
+              { name: 'Master', color: 'from-purple-500 to-pink-600', elo: '2000+' },
+              { name: 'Grandmaster', color: 'from-red-500 to-rose-700', elo: '2200+' },
+            ].map((tier, idx) => {
+              const currentElo = profile?.eloRating || 1000;
+              const isUnlocked = currentElo >= 1000 + idx * 200;
+              return (
+                <div
+                  key={tier.name}
+                  className={`p-2 rounded-xl border text-center transition-all ${
+                    isUnlocked
+                      ? 'border-accent/40 bg-surface shadow-sm'
+                      : 'border-white/5 bg-surface/30 opacity-40'
+                  }`}
+                >
+                  <div className={`h-1.5 w-full rounded-full bg-gradient-to-r ${tier.color} mb-1.5`} />
+                  <div className="text-[10px] font-bold text-text truncate">{tier.name}</div>
+                  <div className="text-[8px] font-mono text-text-muted">{tier.elo}</div>
+                </div>
+              );
+            })}
           </div>
         </div>
 

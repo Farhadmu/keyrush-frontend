@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { api, getCurrentUser, UserSession } from '../../lib/api';
+import { checkGamingAccess } from '../../lib/roleGuard';
 import {
   Sparkles,
   Lock,
@@ -28,6 +29,12 @@ export default function BattlePassPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    // Role-based access control: Organizers & Admins cannot access racer battle pass
+    const access = checkGamingAccess();
+    if (!access.allowed && access.redirectUrl) {
+      window.location.href = access.redirectUrl;
+      return;
+    }
     const user = getCurrentUser();
     setCurrentUser(user);
     loadBattlePass();
