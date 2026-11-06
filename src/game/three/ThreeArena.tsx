@@ -342,19 +342,19 @@ export default function ThreeArena({
 
       // Update Optical Speed Streaks (Streaming past camera at vehicle speed)
       if (streakGeometry && streakMat && streakCount > 0) {
-        const speedKmh = targetRacer?.speed || 20;
+        const speedKmh = targetRacer ? targetRacer.speed : 0;
         const isNitro = targetRacer?.nitroActive || false;
         const speedFactor = Math.min(1.8, speedKmh / 90);
 
         streakMat.opacity = THREE.MathUtils.lerp(
           streakMat.opacity,
-          isRacing && speedKmh > 22 ? (isNitro ? 0.95 : Math.min(0.8, speedFactor * 0.7)) : 0,
+          isRacing && speedKmh > 15 ? (isNitro ? 0.95 : Math.min(0.8, speedFactor * 0.7)) : 0,
           0.1,
         );
 
         const posAttr = streakGeometry.attributes.position;
         const posArr = posAttr.array as Float32Array;
-        const streakSpeed = Math.max(25, speedKmh * 1.1) * delta;
+        const streakSpeed = Math.max(15, speedKmh * 1.1) * delta;
 
         for (let i = 0; i < streakCount; i++) {
           posArr[i * 6 + 2] -= streakSpeed;
@@ -380,7 +380,7 @@ export default function ThreeArena({
 
       // Update Camera based on player's own vehicle
       if (camera) {
-        const speed = targetRacer?.speed || 20;
+        const speed = targetRacer ? targetRacer.speed : 0;
         const isNitro = targetRacer?.nitroActive || false;
         const speedRatio = Math.min(1.6, speed / 100);
 
@@ -526,7 +526,7 @@ export default function ThreeArena({
   const displayRacers = playerInTop || !currentPlayer ? topRacers : [...topRacers, currentPlayer];
 
   // Visual Speedometer needle angle & color state
-  const speed = currentPlayer?.speed || 20;
+  const speed = currentPlayer ? currentPlayer.speed : 0;
   const isNitro = currentPlayer?.nitroActive || false;
   const speedClamped = Math.min(220, Math.max(0, speed));
   const speedPercentage = Math.min(100, Math.round((speedClamped / 200) * 100));

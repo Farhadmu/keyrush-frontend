@@ -43,6 +43,17 @@ const BOT_NAME_SUFFIXES = [
   'Speed', 'Blaster', 'Driver', 'Pro', 'Ace', 'Master', 'Champion', 'Prime', 'Surge', 'Viper',
 ];
 
+export interface FinishArrival {
+  userId: string;
+  username: string;
+  carId: string;
+  rank: number;
+  finishTimeSeconds: number;
+  wpm: number;
+  accuracy?: number;
+  isCurrentPlayer: boolean;
+}
+
 function generateBotRoster(
   count: number,
   playerUsername: string,
@@ -59,7 +70,7 @@ function generateBotRoster(
         username: playerUsername || 'You',
         carId: playerCarId || 'car_cyber_phantom',
         progressPercent: 0,
-        speed: 20,
+        speed: 0, // Zero speed at start line; car ONLY moves when typing!
         nitroActive: false,
         rankPosition: slot,
         finished: false,
@@ -90,7 +101,7 @@ function generateBotRoster(
         username: botName,
         carId,
         progressPercent: 0,
-        speed: 20,
+        speed: 0, // Zero speed at start line; starts when race begins
         nitroActive: false,
         rankPosition: slot,
         finished: false,
@@ -133,6 +144,11 @@ export default function PracticePage() {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [results, setResults] = useState<any | null>(null);
   const [isLoadingPassage, setIsLoadingPassage] = useState(false);
+
+  // Real-time On-Time Finish Line Arrivals List
+  const [finishers, setFinishers] = useState<FinishArrival[]>([]);
+  const raceStartTimestampRef = useRef<number>(0);
+  const lastKeystrokeTimeRef = useRef<number>(0);
 
   // Dynamic Racers State
   const [racers, setRacers] = useState<(RacerVisualState & { targetWpm: number })[]>(() =>
@@ -232,11 +248,13 @@ export default function PracticePage() {
     setRaceStarted(false);
     setCountdown(null);
     setResults(null);
+    setFinishers([]);
+    lastKeystrokeTimeRef.current = 0;
     setRacers((prev) =>
       prev.map((r, i) => ({
         ...r,
         progressPercent: 0,
-        speed: 20,
+        speed: 0, // Strict: 0 km/h at starting grid
         nitroActive: false,
         rankPosition: i + 1,
         finished: false,
@@ -255,6 +273,8 @@ export default function PracticePage() {
         if (prev === null || prev <= 1) {
           clearInterval(timer);
           setRaceStarted(true);
+          raceStartTimestampRef.current = Date.now();
+          lastKeystrokeTimeRef.current = 0;
           return null;
         }
         return prev - 1;
@@ -288,7 +308,28 @@ export default function PracticePage() {
           const newProgress = Math.min(100, r.progressPercent + advancePercent);
           const finished = newProgress >= 100;
           const nitroActive = newProgress > 35 && newProgress < 65 && r.targetWpm >= 75;
-          const speed = Math.round(20 + currentWpm * 2.6 * (nitroActive ? 1.25 : 1.0));
+          const speed = finished ? 0 : Math.round(20 + currentWpm * 2.6 * (nitroActive ? 1.25 : 1.0));
+
+          // Real-time finish arrival registration for bots
+          if (finished && !r.finished) {
+            const timeSec = Number(((Date.now() - raceStartTimestampRef.current) / 1000).toFixed(1));
+            setFinishers((prevFin) => {
+              if (prevFin.some((f) => f.userId === r.userId)) return prevFin;
+              const rank = prevFin.length + 1;
+              return [
+                ...prevFin,
+                {
+                  userId: r.userId,
+                  username: r.username,
+                  carId: r.carId,
+                  rank,
+                  finishTimeSeconds: timeSec,
+                  wpm: Math.round(currentWpm),
+                  isCurrentPlayer: false,
+                },
+              ];
+            });
+          }
 
           return {
             ...r,
@@ -315,23 +356,50 @@ export default function PracticePage() {
 
   // Player typing progress handler
   const handleTypingProgress = (data: any) => {
+    lastKeystrokeTimeRef.current = Date.now();
+
     setRacers((prev) => {
       const updated = prev.map((r) => {
         if (!r.isCurrentPlayer) return r;
         const nitroActive = data.streak >= 20;
+
         // If player has a typo, car stalls to complete stop (0 km/h) and CANNOT accelerate until fixed!
         const speed = data.hasError
           ? 0
-          : Math.round(20 + data.netWpm * 2.8 * (nitroActive ? 1.25 : 1.0));
-        // Progress ONLY advances from unbroken correct characters!
+          : Math.round(25 + data.netWpm * 2.6 * (nitroActive ? 1.25 : 1.0));
+
+        // Progress ONLY advances from unbroken correct characters in serial order!
         const progressPercent = Math.min((data.unbrokenCorrectChars / passage.content.length) * 100, 100);
+        const finished = data.isFinished || progressPercent >= 100;
+
+        // Real-time finish arrival registration for player
+        if (finished && !r.finished) {
+          const timeSec = Number(((Date.now() - raceStartTimestampRef.current) / 1000).toFixed(1));
+          setFinishers((prevFin) => {
+            if (prevFin.some((f) => f.userId === r.userId)) return prevFin;
+            const rank = prevFin.length + 1;
+            return [
+              ...prevFin,
+              {
+                userId: r.userId,
+                username: playerName,
+                carId: playerCar,
+                rank,
+                finishTimeSeconds: timeSec,
+                wpm: Math.round(data.netWpm),
+                accuracy: data.accuracy,
+                isCurrentPlayer: true,
+              },
+            ];
+          });
+        }
 
         return {
           ...r,
           progressPercent,
-          speed,
+          speed: finished ? 0 : speed,
           nitroActive,
-          finished: data.isFinished,
+          finished,
         };
       });
 
@@ -346,9 +414,33 @@ export default function PracticePage() {
     });
   };
 
+  // Idle Deceleration Effect: When player stops typing, vehicle halts to 0 km/h within 800ms
+  useEffect(() => {
+    if (!raceStarted || results) return;
+
+    const idleTimer = setInterval(() => {
+      const timeSinceKeystroke = Date.now() - lastKeystrokeTimeRef.current;
+      if (timeSinceKeystroke > 800 && lastKeystrokeTimeRef.current > 0) {
+        setRacers((prev) =>
+          prev.map((r) => {
+            if (r.isCurrentPlayer && !r.finished && r.speed > 0) {
+              return { ...r, speed: 0 };
+            }
+            return r;
+          })
+        );
+      }
+    }, 150);
+
+    return () => clearInterval(idleTimer);
+  }, [raceStarted, results]);
+
   // Player completes race
   const handleTypingComplete = (finalMetrics: any) => {
-    const playerRank = racers.find((r) => r.isCurrentPlayer)?.rankPosition || 1;
+    const me = racers.find((r) => r.isCurrentPlayer);
+    const playerFin = finishers.find((f) => f.userId === me?.userId);
+    const playerRank = playerFin?.rank || me?.rankPosition || 1;
+
     setResults({
       ...finalMetrics,
       rank: playerRank,
@@ -685,6 +777,84 @@ export default function PracticePage() {
         raceStarted={raceStarted}
         countdown={countdown}
       />
+
+      {/* Live Finish Line Arrivals Strip (অন-টাইম ফিনিশার্স তালিকা) */}
+      <div className="rounded-2xl border border-white/10 bg-surface/90 p-4 sm:p-5 shadow-xl backdrop-blur-xl space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-white/5 pb-3">
+          <div className="flex items-center space-x-2.5">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
+              <Flag className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-black tracking-wider uppercase text-white font-mono flex items-center space-x-2">
+                <span>Live Finish Line Arrivals</span>
+                <span className="text-text-muted font-normal text-[11px]">(অন-টাইম ফিনিশড লিস্ট)</span>
+              </h3>
+              <p className="text-[11px] text-text-muted">
+                Cars that cross the holographic checkered finish arch appear here live in real-time arrival order.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2 font-mono text-xs">
+            <span className="text-text-muted">Finished:</span>
+            <span
+              className={`px-2.5 py-1 rounded-lg font-bold border ${
+                finishers.length > 0
+                  ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                  : 'bg-white/5 border-white/10 text-text-muted'
+              }`}
+            >
+              {finishers.length} / {racers.length} Cars
+            </span>
+          </div>
+        </div>
+
+        {finishers.length === 0 ? (
+          <div className="flex items-center justify-center py-4 text-xs font-mono text-text-muted gap-2 rounded-xl bg-surface-dark/50 border border-white/5">
+            <span className="inline-block w-2.5 h-2.5 rounded-full bg-accent animate-ping" />
+            <span>
+              {raceStarted
+                ? '🏁 Race in progress! Cars are speeding toward the finish arch... First crosser claims #1!'
+                : '🚦 Waiting on starting grid. Press "Start Race" to begin!'}
+            </span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 max-h-[220px] overflow-y-auto pr-1">
+            {finishers.map((f) => {
+              const medal = f.rank === 1 ? '🥇 1st' : f.rank === 2 ? '🥈 2nd' : f.rank === 3 ? '🥉 3rd' : `#${f.rank}`;
+              return (
+                <div
+                  key={f.userId}
+                  className={`flex items-center justify-between p-3 rounded-xl border text-xs font-mono transition-all animate-in fade-in slide-in-from-right-3 duration-300 ${
+                    f.isCurrentPlayer
+                      ? 'bg-primary/25 border-primary text-white shadow-lg shadow-primary/25 ring-1 ring-primary'
+                      : f.rank === 1
+                      ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 shadow-md shadow-amber-500/10'
+                      : 'bg-surface-dark/90 border-white/10 text-text'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5 min-w-0">
+                    <span className="font-bold text-sm shrink-0 font-display">{medal}</span>
+                    <div className="truncate">
+                      <div className="font-bold truncate text-[12px] flex items-center space-x-1">
+                        <span>{f.username}</span>
+                        {f.isCurrentPlayer && <span className="text-[10px] text-accent font-black">(YOU)</span>}
+                      </div>
+                      <div className="text-[10px] text-text-muted">
+                        ⏱ {f.finishTimeSeconds}s • {f.wpm} WPM
+                      </div>
+                    </div>
+                  </div>
+                  <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+                    🏁 FINISHED
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Authoritative Typing Engine */}
       <TypingEngine
