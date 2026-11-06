@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import RacingCanvas, { RacerVisualState } from '../../game/RacingCanvas';
+import ThreeArena from '../../game/three/ThreeArena';
+import { RacerVisualState } from '../../game/RacingCanvas';
 import TypingEngine from '../../features/typing/TypingEngine';
 import { api, getCurrentUser } from '../../lib/api';
 import { RefreshCw, Play, Trophy, Sparkles, Award } from 'lucide-react';
@@ -259,8 +260,8 @@ export default function PracticePage() {
         </div>
       )}
 
-      {/* 2.5D Racing Canvas visualizer */}
-      <RacingCanvas racers={racers} raceStarted={raceStarted} />
+      {/* 3D WebGL Esports Racing Arena */}
+      <ThreeArena racers={racers} raceStarted={raceStarted} />
 
       {/* Typing Engine */}
       <TypingEngine

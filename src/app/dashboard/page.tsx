@@ -92,6 +92,9 @@ export default function DashboardPage() {
                   <span className="px-2.5 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30 text-xs font-bold uppercase tracking-wider">
                     {profile?.rank || 'ROOKIE'}
                   </span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-accent/20 text-accent border border-accent/30 text-xs font-mono font-bold uppercase tracking-wider">
+                    {profile?.eloRating || 1000} ELO ({profile?.eloTier || 'BRONZE'})
+                  </span>
                 </div>
                 <p className="text-xs text-text-muted font-mono">
                   RACER ID #{currentUser?.id.slice(-6)} • {currentUser?.country || 'BD'} • Active Pilot
@@ -256,27 +259,72 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-text flex items-center space-x-2">
                 <Car className="h-5 w-5 text-accent" />
-                <span>Selected Vehicle</span>
+                <span>Active 3D Vehicle</span>
               </h2>
-              <Link href="/dashboard/profile" className="text-xs text-primary hover:underline">
-                Change Car
+              <Link href="/garage" className="text-xs text-primary hover:underline font-semibold flex items-center space-x-1">
+                <span>3D Workshop</span>
+                <ChevronRight className="h-3.5 w-3.5" />
               </Link>
             </div>
 
             <div className="p-4 rounded-xl bg-surface/60 border border-white/5 flex flex-col items-center text-center space-y-3">
-              <img
-                src="/assets/cars/car_cyber_phantom.svg"
-                alt="Active Car"
-                className="w-36 h-auto drop-shadow-[0_0_15px_rgba(59,130,246,0.5)]"
-              />
+              <div className="w-24 h-24 rounded-2xl bg-accent/10 border border-accent/30 flex items-center justify-center text-accent">
+                <Car className="w-12 h-12" />
+              </div>
               <div>
-                <div className="text-base font-black text-text">Cyber Phantom GT</div>
-                <div className="text-xs text-accent font-mono">Hyper-EV Class • 360 KM/H</div>
+                <div className="text-base font-black text-text capitalize">
+                  {profile?.selectedCarId ? profile.selectedCarId.replace('car_', '').replace(/_/g, ' ') : 'Cyber Phantom GT'}
+                </div>
+                <div className="text-xs text-accent font-mono mt-0.5">3D Interactive Showroom Available</div>
+              </div>
+              <Link
+                href="/garage"
+                className="w-full py-2 rounded-xl bg-gradient-to-r from-primary to-accent text-white font-bold text-xs uppercase tracking-wider shadow-md hover:opacity-95 transition"
+              >
+                Customize Livery & Rims
+              </Link>
+            </div>
+
+            {/* Daily Missions & Quests */}
+            <div className="space-y-2.5 pt-2 border-t border-white/5">
+              <h3 className="text-xs font-mono font-bold text-text-muted uppercase tracking-wider flex items-center justify-between">
+                <span>Daily Missions</span>
+                <span className="text-accent text-[11px]">+350 XP Available</span>
+              </h3>
+
+              <div className="p-2.5 rounded-xl bg-surface-dark border border-white/5 space-y-1.5">
+                <div className="flex justify-between text-xs font-medium">
+                  <span className="text-white">Complete 3 Multiplayer Races</span>
+                  <span className="text-accent font-mono text-[11px]">
+                    {Math.min(stats.totalRaces, 3)} / 3
+                  </span>
+                </div>
+                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-accent rounded-full transition-all"
+                    style={{ width: `${Math.min(100, (stats.totalRaces / 3) * 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-surface-dark border border-white/5 space-y-1.5">
+                <div className="flex justify-between text-xs font-medium">
+                  <span className="text-white">Achieve 98% Accuracy in a Race</span>
+                  <span className="text-emerald-400 font-mono text-[11px]">
+                    {stats.averageAccuracy >= 98 ? 'COMPLETE' : `${stats.averageAccuracy}%`}
+                  </span>
+                </div>
+                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-400 rounded-full transition-all"
+                    style={{ width: `${Math.min(100, (stats.averageAccuracy / 98) * 100)}%` }}
+                  />
+                </div>
               </div>
             </div>
 
             {/* Quick Links */}
-            <div className="space-y-2 pt-2">
+            <div className="space-y-2 pt-2 border-t border-white/5">
               <Link
                 href="/dashboard/analytics"
                 className="flex items-center justify-between p-3 rounded-xl bg-surface hover:bg-surface-light border border-white/5 transition-all text-xs font-semibold text-text"

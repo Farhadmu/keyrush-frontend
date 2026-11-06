@@ -16,6 +16,8 @@ import {
   Menu,
   X,
   Bell,
+  Car,
+  Sparkles,
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -39,6 +41,8 @@ export default function Navbar() {
   const navLinks = [
     { name: 'Practice', href: '/practice', icon: Zap },
     { name: 'Multiplayer', href: '/multiplayer', icon: Flame },
+    { name: '3D Garage', href: '/garage', icon: Car },
+    { name: 'Battle Pass', href: '/battlepass', icon: Sparkles },
     { name: 'Competitions', href: '/competitions', icon: Trophy },
     { name: 'Leaderboard', href: '/leaderboard', icon: Flag },
     { name: 'Organizations', href: '/organizations', icon: Users },

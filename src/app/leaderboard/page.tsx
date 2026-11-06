@@ -6,7 +6,7 @@ import { Trophy, Award, Flame, Globe, Filter } from 'lucide-react';
 
 export default function LeaderboardPage() {
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
-  const [category, setCategory] = useState<'GLOBAL' | 'BD'>('GLOBAL');
+  const [category, setCategory] = useState<'GLOBAL' | 'BD' | 'RANKED'>('RANKED');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -16,7 +16,14 @@ export default function LeaderboardPage() {
   const loadLeaderboard = async () => {
     setLoading(true);
     try {
-      const data = await api.getGlobalLeaderboard(50);
+      let data;
+      if (category === 'RANKED') {
+        data = await api.getRankedLeaderboard(50);
+      } else if (category === 'BD') {
+        data = await api.getCountryLeaderboard('BD', 50);
+      } else {
+        data = await api.getGlobalLeaderboard(50);
+      }
       setLeaderboard(data || []);
     } catch (e) {
       // fallback
@@ -42,14 +49,22 @@ export default function LeaderboardPage() {
         </div>
 
         {/* Category Toggles */}
-        <div className="flex rounded-xl border border-white/10 bg-surface p-1 text-xs font-semibold">
+        <div className="flex rounded-xl border border-white/10 bg-surface p-1 text-xs font-semibold space-x-1">
+          <button
+            onClick={() => setCategory('RANKED')}
+            className={`rounded-lg px-4 py-1.5 transition-all ${
+              category === 'RANKED' ? 'bg-primary text-white shadow-md shadow-primary/25' : 'text-text-muted hover:text-text'
+            }`}
+          >
+            Ranked ELO
+          </button>
           <button
             onClick={() => setCategory('GLOBAL')}
             className={`rounded-lg px-4 py-1.5 transition-all ${
               category === 'GLOBAL' ? 'bg-primary text-white shadow-md shadow-primary/25' : 'text-text-muted hover:text-text'
             }`}
           >
-            Worldwide
+            Top WPM
           </button>
           <button
             onClick={() => setCategory('BD')}
@@ -71,6 +86,7 @@ export default function LeaderboardPage() {
                 <th className="px-6 py-4">Rank</th>
                 <th className="px-6 py-4">Racer</th>
                 <th className="px-6 py-4">Country</th>
+                {category === 'RANKED' && <th className="px-6 py-4 text-center">ELO Rating</th>}
                 <th className="px-6 py-4 text-right">Best WPM</th>
                 <th className="px-6 py-4 text-right">Avg WPM</th>
                 <th className="px-6 py-4 text-right">Accuracy</th>
@@ -98,6 +114,14 @@ export default function LeaderboardPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-text-muted font-mono">{player.country || 'BD'}</td>
+                    {category === 'RANKED' && (
+                      <td className="px-6 py-4 text-center font-mono font-bold">
+                        <span className="text-white mr-1.5">{player.eloRating || 1000}</span>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-primary/20 text-primary border border-primary/30">
+                          {player.eloTier || 'BRONZE'}
+                        </span>
+                      </td>
+                    )}
                     <td className="px-6 py-4 text-right font-mono text-sm font-bold text-accent text-glow-cyan">
                       {player.bestWpm}
                     </td>
@@ -111,7 +135,7 @@ export default function LeaderboardPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-xs text-text-muted">
+                  <td colSpan={category === 'RANKED' ? 9 : 8} className="py-12 text-center text-xs text-text-muted">
                     No verified race results yet. Enter a race to claim the #1 spot!
                   </td>
                 </tr>

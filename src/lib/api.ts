@@ -114,6 +114,10 @@ export const api = {
   // Racing & Results
   getCars: () => apiFetch('/racing/cars'),
   getCar: (id: string) => apiFetch(`/racing/cars/${id}`),
+  getMyGarage: () => apiFetch('/racing/my-garage'),
+  getCustomization: (carId: string) => apiFetch(`/racing/customization/${carId}`),
+  saveCustomization: (carId: string, options: any) =>
+    apiFetch(`/racing/customization/${carId}`, { method: 'POST', body: JSON.stringify(options) }),
   getRecentResults: (limit: number = 20) => apiFetch(`/racing/results/recent?limit=${limit}`),
   getResultById: (id: string) => apiFetch(`/racing/results/${id}`),
   getUserRaceHistory: (limit: number = 20) => apiFetch(`/racing/history?limit=${limit}`),
@@ -160,7 +164,9 @@ export const api = {
 
   // Leaderboard
   getGlobalLeaderboard: (limit: number = 20) => apiFetch(`/leaderboards/global?limit=${limit}`),
-  getCountryLeaderboard: (country: string = 'BD') => apiFetch(`/leaderboards/country?country=${country}`),
+  getRankedLeaderboard: (limit: number = 20) => apiFetch(`/leaderboards/ranked?limit=${limit}`),
+  getCountryLeaderboard: (country: string = 'BD', limit: number = 50) =>
+    apiFetch(`/leaderboards/country?country=${country}&limit=${limit}`),
 
   // AI & Intelligent Features
   getAiCoaching: (history: any[]) => apiFetch('/ai/coaching', { method: 'POST', body: JSON.stringify({ history }) }),
@@ -170,4 +176,11 @@ export const api = {
     apiFetch(`/ai/practice-plan?level=${level}&avgWpm=${avgWpm}`),
   generateAiPassage: (payload: { language?: string; difficulty?: string; topic?: string }) =>
     apiFetch('/ai/generate-passage', { method: 'POST', body: JSON.stringify(payload) }),
+
+  // Economy & Battle Pass
+  getBattlePass: () => apiFetch('/economy/battle-pass'),
+  claimBattlePassTier: (tierLevel: number) =>
+    apiFetch('/economy/battle-pass/claim', { method: 'POST', body: JSON.stringify({ tierLevel }) }),
+  upgradeBattlePassSandbox: (provider: string = 'STRIPE_SANDBOX') =>
+    apiFetch('/economy/sandbox-upgrade', { method: 'POST', body: JSON.stringify({ provider }) }),
 };

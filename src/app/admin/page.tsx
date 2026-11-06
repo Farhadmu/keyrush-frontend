@@ -303,12 +303,13 @@ export default function AdminPortalPage() {
                         onChange={(e) => handleChangeRole(u, e.target.value)}
                         className="rounded-lg border border-white/10 bg-surface px-2 py-1 font-mono text-[11px] text-accent focus:outline-none"
                       >
-                        <option value="PLAYER">PLAYER</option>
-                        <option value="TEAM_CAPTAIN">TEAM_CAPTAIN</option>
-                        <option value="ORGANIZATION_ADMIN">ORGANIZATION_ADMIN</option>
-                        <option value="COMPETITION_ADMIN">COMPETITION_ADMIN</option>
-                        <option value="PLATFORM_MODERATOR">PLATFORM_MODERATOR</option>
+                        <option value="USER">USER (Player)</option>
+                        <option value="ORGANIZER">ORGANIZER</option>
                         <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                        <option value="PLAYER">PLAYER (Legacy)</option>
+                        <option value="TEAM_CAPTAIN">TEAM_CAPTAIN</option>
+                        <option value="ORGANIZATION_ADMIN">ORGANIZATION_ADMIN (Legacy)</option>
+                        <option value="COMPETITION_ADMIN">COMPETITION_ADMIN (Legacy)</option>
                       </select>
                     </td>
 

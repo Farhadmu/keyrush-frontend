@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { api, getCurrentUser, UserSession } from '../../lib/api';
 import { getRacingSocket } from '../../lib/socket';
-import RacingCanvas, { RacerVisualState } from '../../game/RacingCanvas';
+import ThreeArena from '../../game/three/ThreeArena';
+import { RacerVisualState } from '../../game/RacingCanvas';
 import TypingEngine from '../../features/typing/TypingEngine';
 import { Users, Plus, Play, LogIn, Flame, Trophy, CheckCircle, Clock } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -302,8 +303,8 @@ export default function MultiplayerPage() {
             </div>
           )}
 
-          {/* 2.5D Multiplayer Canvas */}
-          <RacingCanvas racers={racers} raceStarted={raceStarted} />
+          {/* 3D WebGL Multiplayer Arena */}
+          <ThreeArena racers={racers} raceStarted={raceStarted} />
 
           {/* Typing Engine during Race */}
           {activeRoom.passage && (
