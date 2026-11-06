@@ -14,6 +14,8 @@ interface TypingEngineProps {
   onProgress?: (data: {
     textBuffer: string;
     typedIndex: number;
+    unbrokenCorrectChars: number;
+    hasError: boolean;
     errorCount: number;
     rawInputs: number;
     rawWpm: number;
@@ -92,34 +94,41 @@ export default function TypingEngine({
     const newTotalInputs = Math.max(totalInputs + 1, currentLength);
     setTotalInputs(newTotalInputs);
 
-    // Evaluate accuracy and mistakes
+    // Evaluate accuracy and find the FIRST mistake
     const newErrors: number[] = [];
-    let correctCount = 0;
+    let firstErrorIndex = -1;
 
     for (let i = 0; i < currentLength; i++) {
-      if (val[i] === targetContent[i]) {
-        correctCount++;
-      } else {
+      if (val[i] !== targetContent[i]) {
         newErrors.push(i);
+        if (firstErrorIndex === -1) {
+          firstErrorIndex = i;
+        }
       }
     }
+
+    const hasError = firstErrorIndex !== -1;
+    // CRITICAL: Unbroken correct characters count!
+    // If the user made a typo at index 5, unbrokenCorrectChars is strictly 5.
+    // Progress and the car will NEVER advance until the mistake is backspaced and corrected!
+    const unbrokenCorrectChars = hasError ? firstErrorIndex : currentLength;
 
     setTypedText(val);
     setErrors(newErrors);
 
-    // Calculate Streak
-    if (newErrors.length === 0 && currentLength > typedText.length) {
+    // Calculate Streak (Only increases on unbroken correct keystrokes)
+    if (!hasError && currentLength > typedText.length) {
       setStreak(prev => prev + 1);
-    } else if (newErrors.length > 0) {
+    } else if (hasError) {
       setStreak(0);
     }
 
     // Standard scoring formulas
     const elapsedMinutes = Math.max((now - effectiveStartTime) / 60000, 0.03);
     const calculatedRawWpm = Number(((newTotalInputs / 5) / elapsedMinutes).toFixed(1));
-    const calculatedNetWpm = Math.max(0, Number(((correctCount / 5) / elapsedMinutes).toFixed(1)));
+    const calculatedNetWpm = Math.max(0, Number(((unbrokenCorrectChars / 5) / elapsedMinutes).toFixed(1)));
     const calculatedAccuracy = newTotalInputs > 0
-      ? Number(((correctCount / newTotalInputs) * 100).toFixed(1))
+      ? Number(((unbrokenCorrectChars / newTotalInputs) * 100).toFixed(1))
       : 100;
 
     setRawWpm(calculatedRawWpm);
@@ -140,13 +149,15 @@ export default function TypingEngine({
 
     onProgress?.({
       textBuffer: val,
-      typedIndex: currentLength,
+      typedIndex: unbrokenCorrectChars, // ONLY correct progress advances the vehicle!
+      unbrokenCorrectChars,
+      hasError,
       errorCount: newErrors.length,
       rawInputs: newTotalInputs,
       rawWpm: calculatedRawWpm,
       netWpm: calculatedNetWpm,
       accuracy: calculatedAccuracy,
-      streak: newErrors.length === 0 ? streak + 1 : 0,
+      streak: hasError ? 0 : streak + 1,
       isFinished: completed,
     });
   };

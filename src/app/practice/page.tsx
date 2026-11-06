@@ -319,8 +319,12 @@ export default function PracticePage() {
       const updated = prev.map((r) => {
         if (!r.isCurrentPlayer) return r;
         const nitroActive = data.streak >= 20;
-        const speed = Math.round(20 + data.netWpm * 2.8 * (nitroActive ? 1.25 : 1.0));
-        const progressPercent = Math.min((data.typedIndex / passage.content.length) * 100, 100);
+        // If player has a typo, car stalls to complete stop (0 km/h) and CANNOT accelerate until fixed!
+        const speed = data.hasError
+          ? 0
+          : Math.round(20 + data.netWpm * 2.8 * (nitroActive ? 1.25 : 1.0));
+        // Progress ONLY advances from unbroken correct characters!
+        const progressPercent = Math.min((data.unbrokenCorrectChars / passage.content.length) * 100, 100);
 
         return {
           ...r,

@@ -86,6 +86,45 @@ export default function ThreeArena({
     }
   }, []);
 
+  // Helper to dynamically build or replace track environment without tearing down WebGLRenderer
+  const rebuildTrack = (theme: TrackTheme, length: number, racerCount: number) => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    if (trackGroupRef.current) {
+      scene.remove(trackGroupRef.current);
+      trackGroupRef.current.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const m = child as THREE.Mesh;
+          if (m.geometry) m.geometry.dispose();
+          if (m.material) {
+            if (Array.isArray(m.material)) m.material.forEach((mat) => mat.dispose());
+            else m.material.dispose();
+          }
+        }
+      });
+      trackGroupRef.current = null;
+    }
+
+    const numRacers = racerCount || 100;
+    const numLanes = Math.min(10, Math.max(4, numRacers <= 10 ? numRacers : 10));
+    const newTrack = TrackFactory.createTrack({
+      theme,
+      trackLength: length,
+      numLanes,
+      numRacers,
+    });
+    scene.add(newTrack);
+    trackGroupRef.current = newTrack;
+  };
+
+  // Rebuild track dynamically when theme, length, or grid size changes
+  useEffect(() => {
+    if (sceneRef.current) {
+      rebuildTrack(selectedTheme, trackLength, racers.length);
+    }
+  }, [selectedTheme, trackLength, racers.length]);
+
   // Initialize Three.js Viewport
   useEffect(() => {
     if (!webGlAvailable || useFallback2D || !mountRef.current) return;
@@ -130,16 +169,7 @@ export default function ThreeArena({
     scene.add(purpleNeon);
 
     // Build Scalable Track Mesh (10 cars per row, supports 1 to 100 racers)
-    const numRacers = racersRef.current.length || 100;
-    const numLanes = Math.min(10, Math.max(4, numRacers <= 10 ? numRacers : 10));
-    const track = TrackFactory.createTrack({
-      theme: selectedTheme,
-      trackLength,
-      numLanes,
-      numRacers,
-    });
-    scene.add(track);
-    trackGroupRef.current = track;
+    rebuildTrack(selectedTheme, trackLength, racersRef.current.length || 100);
 
     // Optical Speed Streaks System (High-Velocity Forward Motion)
     const streakCount = graphicsQuality === 'low' ? 0 : graphicsQuality === 'medium' ? 140 : 280;
@@ -363,10 +393,15 @@ export default function ThreeArena({
           camera.updateProjectionMatrix();
         } else {
           // 'chase' mode with speed-lag spring and acceleration response
-          const chaseDistance = 6.4 + speedRatio * 1.6;
-          const chaseHeight = 2.45 + speedRatio * 0.35;
+          const numLanes = Math.min(10, Math.max(4, currentRacers.length <= 10 ? currentRacers.length : 10));
+          const isWideTrack = numLanes >= 8;
 
-          const idealCamX = targetPos.x * 0.85;
+          const baseChaseDist = isWideTrack ? 8.8 : 6.8;
+          const baseChaseHeight = isWideTrack ? 3.6 : 2.65;
+          const chaseDistance = baseChaseDist + speedRatio * 1.8;
+          const chaseHeight = baseChaseHeight + speedRatio * 0.4;
+
+          const idealCamX = isWideTrack ? targetPos.x * 0.45 : targetPos.x * 0.75;
           const idealCamY = targetPos.y + chaseHeight;
           const idealCamZ = targetPos.z - chaseDistance;
 
@@ -381,10 +416,12 @@ export default function ThreeArena({
             camera.position.y += (Math.random() - 0.5) * shakeMag;
           }
 
-          camera.lookAt(targetPos.x, targetPos.y + 0.65, targetPos.z + 16);
+          const lookTargetX = isWideTrack ? targetPos.x * 0.6 : targetPos.x * 0.85;
+          camera.lookAt(lookTargetX, targetPos.y + 0.65, targetPos.z + 18);
 
-          // Dynamic FOV expansion: 54 at idle up to 68 at high speed, 76 during Nitro!
-          const targetFov = 54 + Math.min(16, speedRatio * 14) + (isNitro ? 8 : 0);
+          // Dynamic FOV expansion: 62 at idle up to 74 at high speed, 80 during Nitro!
+          const baseFov = isWideTrack ? 62 : 56;
+          const targetFov = baseFov + Math.min(14, speedRatio * 12) + (isNitro ? 8 : 0);
           camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 0.08);
           camera.updateProjectionMatrix();
         }
@@ -439,7 +476,7 @@ export default function ThreeArena({
         speedLinesMeshRef.current.geometry.dispose();
       }
     };
-  }, [webGlAvailable, useFallback2D, selectedTheme, trackLength, graphicsQuality, racers.length]);
+  }, [webGlAvailable, useFallback2D, graphicsQuality]);
 
   // Reset finish celebration on new race
   useEffect(() => {

@@ -10,8 +10,8 @@ export interface TrackConfig {
 }
 
 export class TrackFactory {
-  // Calibrated lane width: 2.6m allows cars (width 1.65m) to have 0.95m safe buffer
-  static readonly LANE_WIDTH = 2.6;
+  // Calibrated lane width: 2.8m allows cars (width 1.65m) to have over 1.15m of side room
+  static readonly LANE_WIDTH = 2.8;
 
   static getLaneX(laneIndex: number, numLanes: number = 10): number {
     const totalWidth = numLanes * this.LANE_WIDTH;
@@ -217,12 +217,12 @@ export class TrackFactory {
 
     // 10 cars per row rule: numLanes is between 4 and 10
     const numLanes = Math.min(10, Math.max(4, numRacers <= 10 ? numRacers : 10));
-    // Dynamic road width: road expands to perfectly accommodate lanes with 1.2m shoulder on each side
-    const roadWidth = numLanes * this.LANE_WIDTH + 2.4;
+    // Dynamic road width: road expands to perfectly accommodate lanes with 2.0m shoulder on each side
+    const roadWidth = numLanes * this.LANE_WIDTH + 4.0;
 
     // Up to 10 rows for 100 cars (Row 0 to Row 9)
     const totalRows = Math.ceil(numRacers / numLanes);
-    const gridBack = Math.max(70, totalRows * 4.5 + 35); // Extended tarmac behind start line
+    const gridBack = Math.max(75, totalRows * 4.5 + 35); // Extended tarmac behind start line
     const totalRoadLength = length + gridBack + 60;
     const roadCenterZ = (length - gridBack + 60) / 2;
 
@@ -232,8 +232,8 @@ export class TrackFactory {
     root.add(gridFloor);
 
     // Dark side ground terrain
-    [-roadWidth / 2 - 60, roadWidth / 2 + 60].forEach((sideX) => {
-      const terrainGeom = new THREE.PlaneGeometry(120, totalRoadLength);
+    [-roadWidth / 2 - 70, roadWidth / 2 + 70].forEach((sideX) => {
+      const terrainGeom = new THREE.PlaneGeometry(140, totalRoadLength);
       terrainGeom.rotateX(-Math.PI / 2);
       const terrainMat = new THREE.MeshStandardMaterial({
         color: 0x060913,
@@ -266,8 +266,8 @@ export class TrackFactory {
     root.add(road);
 
     // 2. White Edge Shoulders
-    [-roadWidth / 2 + 0.15, roadWidth / 2 - 0.15].forEach((x) => {
-      const edgeGeom = new THREE.PlaneGeometry(0.18, totalRoadLength);
+    [-roadWidth / 2 + 0.2, roadWidth / 2 - 0.2].forEach((x) => {
+      const edgeGeom = new THREE.PlaneGeometry(0.2, totalRoadLength);
       edgeGeom.rotateX(-Math.PI / 2);
       const edgeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
       const edge = new THREE.Mesh(edgeGeom, edgeMat);
@@ -277,7 +277,7 @@ export class TrackFactory {
 
     // 3. Dashed Lane Dividers for all lanes
     for (let lane = 1; lane < numLanes; lane++) {
-      const x = -roadWidth / 2 + 1.2 + lane * this.LANE_WIDTH;
+      const x = -roadWidth / 2 + 2.0 + lane * this.LANE_WIDTH;
       const startD = -Math.floor(gridBack / 5);
       const endD = Math.floor((length + 50) / 5);
       for (let d = startD; d < endD; d++) {
@@ -290,7 +290,7 @@ export class TrackFactory {
       }
     }
 
-    // 4. Starting Grid Markings (Boxes on tarmac for all 10 rows / 100 cars)
+    // 4. Starting Grid Markings (Boxes on tarmac for all rows up to 100 cars)
     for (let row = 0; row < totalRows; row++) {
       const rowZ = -2.0 - row * 4.5;
       for (let lane = 0; lane < numLanes; lane++) {
@@ -299,33 +299,33 @@ export class TrackFactory {
 
         const laneX = this.getLaneX(lane, numLanes);
         // Grid Box Outline
-        const boxGeom = new THREE.PlaneGeometry(1.8, 3.4);
+        const boxGeom = new THREE.PlaneGeometry(2.0, 3.6);
         boxGeom.rotateX(-Math.PI / 2);
         const boxMat = new THREE.MeshBasicMaterial({
           color: slot <= 10 ? 0x00f0ff : 0x38bdf8,
           wireframe: true,
           transparent: true,
-          opacity: 0.7,
+          opacity: 0.75,
         });
         const box = new THREE.Mesh(boxGeom, boxMat);
         box.position.set(laneX, 0.015, rowZ);
         root.add(box);
 
         // Front start mark for each slot
-        const markGeom = new THREE.PlaneGeometry(1.8, 0.15);
+        const markGeom = new THREE.PlaneGeometry(2.0, 0.18);
         markGeom.rotateX(-Math.PI / 2);
         const markMat = new THREE.MeshBasicMaterial({ color: slot <= 10 ? 0x00f0ff : 0x38bdf8 });
         const mark = new THREE.Mesh(markGeom, markMat);
-        mark.position.set(laneX, 0.018, rowZ + 1.7);
+        mark.position.set(laneX, 0.018, rowZ + 1.8);
         root.add(mark);
       }
     }
 
     // 5. Guardrails & Curbs with Neon LED Strips (Containment boundaries)
-    const curbHeight = 0.38;
+    const curbHeight = 0.42;
     [-roadWidth / 2 - 0.25, roadWidth / 2 + 0.25].forEach((xPos, idx) => {
       // Solid Barrier Wall
-      const wallGeom = new THREE.BoxGeometry(0.45, curbHeight, totalRoadLength);
+      const wallGeom = new THREE.BoxGeometry(0.5, curbHeight, totalRoadLength);
       const wallMat = new THREE.MeshStandardMaterial({
         color: 0x1e293b,
         roughness: 0.5,
@@ -337,10 +337,10 @@ export class TrackFactory {
 
       // Neon LED strip on top of guardrail
       const stripColor = idx === 0 ? 0x00f0ff : 0x8b5cf6;
-      const stripGeom = new THREE.BoxGeometry(0.08, 0.08, totalRoadLength);
+      const stripGeom = new THREE.BoxGeometry(0.09, 0.09, totalRoadLength);
       const stripMat = new THREE.MeshBasicMaterial({ color: stripColor });
       const strip = new THREE.Mesh(stripGeom, stripMat);
-      strip.position.set(xPos + (idx === 0 ? 0.2 : -0.2), curbHeight, roadCenterZ);
+      strip.position.set(xPos + (idx === 0 ? 0.22 : -0.22), curbHeight, roadCenterZ);
       root.add(strip);
     });
 
@@ -359,13 +359,13 @@ export class TrackFactory {
     const pillarEndZ = length + 40;
 
     for (let pz = pillarStartZ; pz < pillarEndZ; pz += 12) {
-      [-roadWidth / 2 - 1.2, roadWidth / 2 + 1.2].forEach((xPos, idx) => {
-        const postGeom = new THREE.CylinderGeometry(0.12, 0.15, 3.8, 8);
+      [-roadWidth / 2 - 1.4, roadWidth / 2 + 1.4].forEach((xPos, idx) => {
+        const postGeom = new THREE.CylinderGeometry(0.12, 0.16, 3.8, 8);
         const post = new THREE.Mesh(postGeom, pillarMat);
         post.position.set(xPos, 1.9, pz);
         root.add(post);
 
-        const capGeom = new THREE.SphereGeometry(0.22, 10, 10);
+        const capGeom = new THREE.SphereGeometry(0.24, 10, 10);
         const cap = new THREE.Mesh(capGeom, idx === 0 ? cyanLightMat : purpleLightMat);
         cap.position.set(xPos, 3.8, pz);
         root.add(cap);
@@ -420,24 +420,24 @@ export class TrackFactory {
     const metalMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4, metalness: 0.8 });
 
     // Side pillars
-    [-roadWidth / 2 - 1.2, roadWidth / 2 + 1.2].forEach((x) => {
-      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 5.2, 10), metalMat);
-      pillar.position.set(x, 2.6, 0);
+    [-roadWidth / 2 - 1.4, roadWidth / 2 + 1.4].forEach((x) => {
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 5.4, 10), metalMat);
+      pillar.position.set(x, 2.7, 0);
       gantry.add(pillar);
     });
 
     // Overhead truss beam
-    const truss = new THREE.Mesh(new THREE.BoxGeometry(roadWidth + 3.0, 0.4, 0.4), metalMat);
-    truss.position.set(0, 5.0, 0);
+    const truss = new THREE.Mesh(new THREE.BoxGeometry(roadWidth + 3.2, 0.45, 0.45), metalMat);
+    truss.position.set(0, 5.2, 0);
     gantry.add(truss);
 
     // Distance Signboard Canvas Mesh
     const signTex = this.createDistanceSignTexture(text, subText);
     if (signTex) {
-      const signGeom = new THREE.PlaneGeometry(Math.min(roadWidth * 0.75, 14), 2.2);
+      const signGeom = new THREE.PlaneGeometry(Math.min(roadWidth * 0.75, 16), 2.4);
       const signMat = new THREE.MeshBasicMaterial({ map: signTex, side: THREE.DoubleSide });
       const signMesh = new THREE.Mesh(signGeom, signMat);
-      signMesh.position.set(0, 5.0, -0.22);
+      signMesh.position.set(0, 5.2, -0.24);
       gantry.add(signMesh);
     }
 
@@ -452,28 +452,28 @@ export class TrackFactory {
     const metalMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.4, metalness: 0.8 });
 
     // Side pillars
-    [-roadWidth / 2 - 1.2, roadWidth / 2 + 1.2].forEach((x) => {
-      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 5.0, 12), metalMat);
-      pillar.position.set(x, 2.5, 0);
+    [-roadWidth / 2 - 1.4, roadWidth / 2 + 1.4].forEach((x) => {
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.35, 5.2, 12), metalMat);
+      pillar.position.set(x, 2.6, 0);
       gantry.add(pillar);
     });
 
     // Overhead truss beam
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(roadWidth + 2.8, 0.45, 0.45), metalMat);
-    beam.position.set(0, 4.8, 0);
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(roadWidth + 3.2, 0.5, 0.5), metalMat);
+    beam.position.set(0, 5.0, 0);
     gantry.add(beam);
 
     // Starting Countdown Lights (Red, Amber, Green)
     const startLights: THREE.Mesh[] = [];
-    [-1.6, 0, 1.6].forEach((xOffset, idx) => {
-      const lightBox = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.45, 0.25), metalMat);
-      lightBox.position.set(xOffset, 4.2, 0);
+    [-1.8, 0, 1.8].forEach((xOffset, idx) => {
+      const lightBox = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.48, 0.28), metalMat);
+      lightBox.position.set(xOffset, 4.4, 0);
       gantry.add(lightBox);
 
       const colors = [0xef4444, 0xf59e0b, 0x22c55e];
       const lensMat = new THREE.MeshBasicMaterial({ color: colors[idx] });
-      const lens = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 14), lensMat);
-      lens.position.set(xOffset, 4.2, 0.12);
+      const lens = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 14), lensMat);
+      lens.position.set(xOffset, 4.4, 0.14);
       gantry.add(lens);
       startLights.push(lens);
     });
@@ -481,7 +481,7 @@ export class TrackFactory {
     root.userData.startLights = startLights;
 
     // Start Line on asphalt
-    const lineGeom = new THREE.PlaneGeometry(roadWidth, 0.8);
+    const lineGeom = new THREE.PlaneGeometry(roadWidth, 0.85);
     lineGeom.rotateX(-Math.PI / 2);
     const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const line = new THREE.Mesh(lineGeom, lineMat);
@@ -497,31 +497,31 @@ export class TrackFactory {
     arch.position.set(0, 0, length);
 
     const metalMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.3, metalness: 0.9 });
-    const towerH = 7.0;
+    const towerH = 7.5;
 
     // 1. Dual Heavy Grand Truss Towers
-    [-roadWidth / 2 - 1.5, roadWidth / 2 + 1.5].forEach((x, idx) => {
-      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.48, towerH, 16), metalMat);
+    [-roadWidth / 2 - 1.8, roadWidth / 2 + 1.8].forEach((x, idx) => {
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.52, towerH, 16), metalMat);
       pillar.position.set(x, towerH / 2, 0);
       arch.add(pillar);
 
       // Tower cross-braces
-      const braceGeom = new THREE.BoxGeometry(0.12, 0.12, 1.4);
+      const braceGeom = new THREE.BoxGeometry(0.14, 0.14, 1.6);
       const brace = new THREE.Mesh(braceGeom, metalMat);
       brace.position.set(x, towerH * 0.75, 0);
       arch.add(brace);
 
       // Flashing Tower Beacon
-      const beaconGeom = new THREE.SphereGeometry(0.35, 12, 12);
+      const beaconGeom = new THREE.SphereGeometry(0.4, 12, 12);
       const beaconMat = new THREE.MeshBasicMaterial({
         color: idx === 0 ? 0x22c55e : 0x00f0ff,
       });
       const beacon = new THREE.Mesh(beaconGeom, beaconMat);
-      beacon.position.set(x, towerH + 0.25, 0);
+      beacon.position.set(x, towerH + 0.3, 0);
       arch.add(beacon);
 
       // Sky-Piercing Victory Laser Beams (Visible from afar across the track)
-      const laserGeom = new THREE.CylinderGeometry(0.35, 0.9, 70, 16);
+      const laserGeom = new THREE.CylinderGeometry(0.4, 1.0, 75, 16);
       const laserMat = new THREE.MeshBasicMaterial({
         color: idx === 0 ? 0x22c55e : 0x00f0ff,
         transparent: true,
@@ -531,20 +531,20 @@ export class TrackFactory {
         side: THREE.DoubleSide,
       });
       const laser = new THREE.Mesh(laserGeom, laserMat);
-      laser.position.set(x, 35, 0);
+      laser.position.set(x, 37.5, 0);
       arch.add(laser);
     });
 
     // 2. Overhead Truss Bridge (Dynamically spans roadWidth)
-    const bridge = new THREE.Mesh(new THREE.BoxGeometry(roadWidth + 4.0, 1.1, 0.8), metalMat);
-    bridge.position.set(0, 5.6, 0);
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(roadWidth + 4.5, 1.2, 0.9), metalMat);
+    bridge.position.set(0, 5.8, 0);
     arch.add(bridge);
 
     // 3. Huge Glowing "FINISH LINE" Canvas Signboard (Facing oncoming racers)
     const finishTex = this.createFinishSignTexture();
     if (finishTex) {
-      const boardWidth = Math.min(roadWidth * 0.88, 16);
-      const boardGeom = new THREE.PlaneGeometry(boardWidth, 2.6);
+      const boardWidth = Math.min(roadWidth * 0.88, 18);
+      const boardGeom = new THREE.PlaneGeometry(boardWidth, 2.8);
       const boardMat = new THREE.MeshBasicMaterial({
         map: finishTex,
         side: THREE.DoubleSide,
@@ -552,19 +552,19 @@ export class TrackFactory {
 
       // Front-facing sign
       const boardFront = new THREE.Mesh(boardGeom, boardMat);
-      boardFront.position.set(0, 5.6, -0.45);
+      boardFront.position.set(0, 5.8, -0.48);
       arch.add(boardFront);
 
       // Back-facing sign (for after crossing)
       const boardBack = new THREE.Mesh(boardGeom, boardMat);
-      boardBack.position.set(0, 5.6, 0.45);
+      boardBack.position.set(0, 5.8, 0.48);
       boardBack.rotateY(Math.PI);
       arch.add(boardBack);
     }
 
     // 4. Genuine Black & White Racing Checkered Ground Decal
     const checkeredTex = this.createCheckeredFinishTexture();
-    const checkeredGeom = new THREE.PlaneGeometry(roadWidth, 4.0);
+    const checkeredGeom = new THREE.PlaneGeometry(roadWidth, 4.5);
     checkeredGeom.rotateX(-Math.PI / 2);
     const checkeredMat = new THREE.MeshBasicMaterial({
       map: checkeredTex || undefined,
@@ -575,10 +575,10 @@ export class TrackFactory {
     arch.add(checkered);
 
     // 5. High-intensity Victory Floodlights shining down onto finish line
-    const victoryLight1 = new THREE.PointLight(0x22c55e, 5, 25);
-    victoryLight1.position.set(-roadWidth / 4, 5.0, 0);
-    const victoryLight2 = new THREE.PointLight(0x00f0ff, 5, 25);
-    victoryLight2.position.set(roadWidth / 4, 5.0, 0);
+    const victoryLight1 = new THREE.PointLight(0x22c55e, 6, 28);
+    victoryLight1.position.set(-roadWidth / 4, 5.2, 0);
+    const victoryLight2 = new THREE.PointLight(0x00f0ff, 6, 28);
+    victoryLight2.position.set(roadWidth / 4, 5.2, 0);
     arch.add(victoryLight1, victoryLight2);
 
     root.add(arch);
