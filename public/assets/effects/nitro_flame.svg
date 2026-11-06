@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60" fill="none">
+  <defs>
+    <linearGradient id="nitroGrad" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0" />
+      <stop offset="40%" stop-color="#06B6D4" />
+      <stop offset="80%" stop-color="#3B82F6" />
+      <stop offset="100%" stop-color="#FFFFFF" />
+    </linearGradient>
+  </defs>
+  <path d="M0 30 Q30 10 90 22 Q100 30 90 38 Q30 50 0 30 Z" fill="url(#nitroGrad)" />
+</svg>
