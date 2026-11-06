@@ -857,5 +857,37 @@ export class VehicleFactory {
     };
     return map[carId] || '#3B82F6';
   }
+
+  /**
+   * Builds a translucent holographic Ghost Car representing personal best or ghost replay.
+   */
+  static createGhostVehicle(carId: string = 'car_cyber_phantom'): THREE.Group {
+    const ghost = this.createVehicle(carId, {
+      paintColor: '#55E6F2',
+      finish: 'chrome',
+      underglow: true,
+      underglowColor: '#55E6F2',
+    });
+    ghost.name = `ghost_vehicle_${carId}`;
+
+    const ghostMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color('#55E6F2'),
+      transparent: true,
+      opacity: 0.38,
+      roughness: 0.2,
+      metalness: 0.8,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    ghost.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        mesh.material = ghostMat;
+      }
+    });
+
+    return ghost;
+  }
 }
 

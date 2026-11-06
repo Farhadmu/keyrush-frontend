@@ -13,6 +13,10 @@ import {
   Flag,
   Flame,
   Lock,
+  Play,
+  Pause,
+  RotateCcw,
+  Ghost,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -26,6 +30,10 @@ export interface ThreeArenaProps {
   trackTheme?: TrackTheme;
   cameraMode?: 'chase' | 'hood';
   onFinishCinematic?: () => void;
+  showGhost?: boolean;
+  ghostProgressPercent?: number;
+  ghostCarId?: string;
+  enableReplayScrubber?: boolean;
 }
 
 export default function ThreeArena({
@@ -36,6 +44,10 @@ export default function ThreeArena({
   trackTheme = 'neon_city',
   cameraMode: initialCameraMode = 'chase',
   onFinishCinematic,
+  showGhost: initialShowGhost = false,
+  ghostProgressPercent: externalGhostProgress,
+  ghostCarId = 'car_cyber_phantom',
+  enableReplayScrubber = false,
 }: ThreeArenaProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [webGlAvailable, setWebGlAvailable] = useState<boolean>(true);
@@ -44,6 +56,13 @@ export default function ThreeArena({
   const [cameraMode, setCameraMode] = useState<'chase' | 'hood'>(initialCameraMode === 'hood' ? 'hood' : 'chase');
   const [selectedTheme, setSelectedTheme] = useState<TrackTheme>(trackTheme);
   const [graphicsQuality, setGraphicsQuality] = useState<GraphicsQuality>('high');
+  const [ghostEnabled, setGhostEnabled] = useState<boolean>(initialShowGhost);
+
+  // Replay timeline scrubber state
+  const [isReplaying, setIsReplaying] = useState(false);
+  const [replayProgress, setReplayProgress] = useState(0);
+  const [replayPlaying, setReplayPlaying] = useState(false);
+  const [replaySpeed, setReplaySpeed] = useState<number>(1);
 
   // Mutable refs to solve React stale-closure in 60fps Three.js requestAnimationFrame loop
   const racersRef = useRef<RacerVisualState[]>(racers);
@@ -58,6 +77,12 @@ export default function ThreeArena({
   const cameraModeRef = useRef<'chase' | 'hood'>(cameraMode);
   cameraModeRef.current = cameraMode;
 
+  const ghostEnabledRef = useRef<boolean>(ghostEnabled);
+  ghostEnabledRef.current = ghostEnabled;
+
+  const ghostProgressRef = useRef<number>(externalGhostProgress ?? 0);
+  ghostProgressRef.current = externalGhostProgress ?? (isReplaying ? replayProgress : 0);
+
   // Overtake notification state
   const prevRankRef = useRef<number | null>(null);
   const [overtakeNotice, setOvertakeNotice] = useState<string | null>(null);
@@ -68,6 +93,7 @@ export default function ThreeArena({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const trackGroupRef = useRef<THREE.Group | null>(null);
   const carMeshesRef = useRef<Map<string, THREE.Group>>(new Map());
+  const ghostCarMeshRef = useRef<THREE.Group | null>(null);
   const racerPositionsRef = useRef<Map<string, { currentZ: number; currentX: number }>>(new Map());
   const speedLinesMeshRef = useRef<THREE.LineSegments | null>(null);
   const finishedTriggeredRef = useRef<boolean>(false);
@@ -340,6 +366,21 @@ export default function ThreeArena({
         }
       });
 
+      // Update Ghost Vehicle (Personal Best Hologram)
+      if (ghostEnabledRef.current && scene) {
+        if (!ghostCarMeshRef.current) {
+          const ghost = VehicleFactory.createGhostVehicle(ghostCarId);
+          scene.add(ghost);
+          ghostCarMeshRef.current = ghost;
+        }
+        const ghostPercent = ghostProgressRef.current;
+        const ghostGridPos = TrackFactory.getGridPosition(0, Math.max(1, currentRacers.length), trackLength, ghostPercent);
+        ghostCarMeshRef.current.position.set(ghostGridPos.x + 0.6, 0.05 + Math.sin(elapsedTime * 3) * 0.04, ghostGridPos.z);
+        ghostCarMeshRef.current.visible = true;
+      } else if (ghostCarMeshRef.current) {
+        ghostCarMeshRef.current.visible = false;
+      }
+
       // Update Optical Speed Streaks (Streaming past camera at vehicle speed)
       if (streakGeometry && streakMat && streakCount > 0) {
         const speedKmh = targetRacer ? targetRacer.speed : 0;
@@ -487,6 +528,21 @@ export default function ThreeArena({
     }
   }, [racers]);
 
+  // Replay playback ticker
+  useEffect(() => {
+    if (!isReplaying || !replayPlaying) return;
+    const interval = setInterval(() => {
+      setReplayProgress((prev) => {
+        if (prev >= 100) {
+          setReplayPlaying(false);
+          return 100;
+        }
+        return Math.min(100, prev + 0.6 * replaySpeed);
+      });
+    }, 50);
+    return () => clearInterval(interval);
+  }, [isReplaying, replayPlaying, replaySpeed]);
+
   // Check for finish line victory celebration
   useEffect(() => {
     const me = racers.find((r) => r.isCurrentPlayer);
@@ -629,6 +685,37 @@ export default function ThreeArena({
               <span className="hidden sm:inline">Hood</span>
             </button>
           </div>
+
+          {/* Ghost Racer Toggle */}
+          <button
+            onClick={() => setGhostEnabled(!ghostEnabled)}
+            className={`px-2 py-1 rounded-lg border text-xs font-mono font-bold flex items-center space-x-1 transition ${
+              ghostEnabled
+                ? 'bg-cyan-400/20 border-cyan-400/40 text-cyan-300'
+                : 'bg-surface-dark border-white/5 text-text-muted hover:text-white'
+            }`}
+            title="Toggle Holographic Ghost Racer"
+          >
+            <Ghost className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Ghost</span>
+          </button>
+
+          {/* Replay Mode Toggle */}
+          <button
+            onClick={() => {
+              setIsReplaying(!isReplaying);
+              setReplayPlaying(!isReplaying);
+            }}
+            className={`px-2 py-1 rounded-lg border text-xs font-mono font-bold flex items-center space-x-1 transition ${
+              isReplaying
+                ? 'bg-purple-500/20 border-purple-500/40 text-purple-300'
+                : 'bg-surface-dark border-white/5 text-text-muted hover:text-white'
+            }`}
+            title="Toggle Race Replay & Timeline Scrubber"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Replay</span>
+          </button>
 
           {/* Theme Selector */}
           <select
@@ -775,6 +862,69 @@ export default function ThreeArena({
           <Camera className="w-3 h-3 text-accent" />
           <span className="uppercase font-bold text-white">{cameraMode} CAMERA</span>
         </div>
+
+        {/* Replay Timeline Scrubber HUD */}
+        {isReplaying && (
+          <div className="absolute bottom-2.5 left-2.5 sm:bottom-4 sm:left-4 right-2.5 sm:right-64 p-3 rounded-2xl bg-background/90 border border-purple-500/30 backdrop-blur-xl shadow-2xl flex flex-col space-y-2 z-30 font-mono text-xs">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <span className="w-2 h-2 rounded-full bg-purple-400 animate-ping" />
+                <span className="font-bold text-purple-300">RACE REPLAY TIMELINE</span>
+                <span className="text-[10px] text-text-muted">({Math.round(replayProgress)}%)</span>
+              </div>
+              <div className="flex items-center space-x-1.5">
+                {[0.5, 1, 2].map((spd) => (
+                  <button
+                    key={spd}
+                    onClick={() => setReplaySpeed(spd)}
+                    className={`px-1.5 py-0.5 rounded text-[10px] ${
+                      replaySpeed === spd
+                        ? 'bg-purple-500 text-white font-bold'
+                        : 'bg-surface text-text-muted hover:text-white'
+                    }`}
+                  >
+                    {spd}x
+                  </button>
+                ))}
+                <button
+                  onClick={() => setIsReplaying(false)}
+                  className="px-2 py-0.5 rounded bg-surface border border-white/10 text-[10px] text-text-muted hover:text-white ml-2"
+                >
+                  Exit
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={() => setReplayPlaying(!replayPlaying)}
+                className="p-1.5 rounded-lg bg-purple-500 text-white hover:bg-purple-600 transition"
+              >
+                {replayPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+              </button>
+
+              <button
+                onClick={() => {
+                  setReplayProgress(0);
+                  setReplayPlaying(true);
+                }}
+                className="p-1.5 rounded-lg bg-surface border border-white/10 text-text-muted hover:text-white"
+                title="Restart Replay"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={replayProgress}
+                onChange={(e) => setReplayProgress(Number(e.target.value))}
+                className="w-full accent-purple-400 cursor-pointer h-1.5 bg-surface-dark rounded-lg"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Dynamic Racer Leaderboard Strip on Bottom (Player Viewport Strictly Preserved) */}

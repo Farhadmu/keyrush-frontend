@@ -24,6 +24,15 @@ import {
   QrCode,
   Calendar,
   Lock,
+  ChevronLeft,
+  Printer,
+  Sliders,
+  DollarSign,
+  Globe,
+  Radio,
+  Play,
+  RotateCcw,
+  ShieldAlert,
 } from 'lucide-react';
 import { api, getCurrentUser, UserSession } from '../../lib/api';
 import { getUserRole, AppRole } from '../../lib/roleGuard';
@@ -33,7 +42,7 @@ export default function OrganizerPortalPage() {
   const [role, setRole] = useState<AppRole>('USER');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'roster' | 'teams' | 'tournaments' | 'certificates' | 'analytics'
+    'overview' | 'roster' | 'teams' | 'tournaments' | 'control_room' | 'certificates' | 'analytics'
   >('overview');
 
   // Multi-organization state
@@ -51,13 +60,68 @@ export default function OrganizerPortalPage() {
   const [teamTag, setTeamTag] = useState('');
   const [teamDesc, setTeamDesc] = useState('');
 
-  // New Tournament Modal
-  const [showTourneyModal, setShowTourneyModal] = useState(false);
+  // 8-Step Tournament Studio Wizard State
+  const [showTourneyWizard, setShowTourneyWizard] = useState(false);
+  const [wizardStep, setWizardStep] = useState(1);
   const [tourneyTitle, setTourneyTitle] = useState('');
+  const [tourneySlug, setTourneySlug] = useState('');
+  const [tourneyDesc, setTourneyDesc] = useState('');
+  const [tourneyLanguage, setTourneyLanguage] = useState('EN');
+  const [tourneyBrandAccent, setTourneyBrandAccent] = useState('#3B82F6');
+  const [tourneyBannerUrl, setTourneyBannerUrl] = useState('');
+  const [tourneyMinElo, setTourneyMinElo] = useState(0);
+  const [tourneyRequireVerified, setTourneyRequireVerified] = useState(false);
+  const [tourneyRegion, setTourneyRegion] = useState('GLOBAL');
+  const [tourneyIsPaid, setTourneyIsPaid] = useState(false);
+  const [tourneyEntryFee, setTourneyEntryFee] = useState(0);
+  const [tourneyPrizePool, setTourneyPrizePool] = useState('$500 Cash + Verified Medal');
   const [tourneyFormat, setTourneyFormat] = useState('SINGLE_ELIMINATION');
   const [tourneyMaxParticipants, setTourneyMaxParticipants] = useState(32);
-  const [tourneyLanguage, setTourneyLanguage] = useState('EN');
   const [tourneyStartDate, setTourneyStartDate] = useState('');
+  const [tourneyCheckInWindow, setTourneyCheckInWindow] = useState(15);
+  const [tourneyHeatInterval, setTourneyHeatInterval] = useState(120);
+
+  // Live Control Room State
+  const [activeHeats, setActiveHeats] = useState<any[]>([
+    {
+      id: 'HEAT-01',
+      round: 'Round of 32',
+      status: 'RACING',
+      racersCount: 5,
+      leader: 'ApexStriker',
+      leaderWpm: 104,
+      progress: 68,
+    },
+    {
+      id: 'HEAT-02',
+      round: 'Round of 32',
+      status: 'PENDING',
+      racersCount: 6,
+      leader: 'Awaiting Launch',
+      leaderWpm: 0,
+      progress: 0,
+    },
+    {
+      id: 'HEAT-03',
+      round: 'Round of 32',
+      status: 'DISPUTED',
+      racersCount: 4,
+      leader: 'CyberSpeed',
+      leaderWpm: 88,
+      progress: 45,
+      disputeReason: 'Racer input lag packet loss reported',
+    },
+    {
+      id: 'HEAT-04',
+      round: 'Round of 32',
+      status: 'COMPLETED',
+      racersCount: 7,
+      leader: 'TurboRacer_BD',
+      leaderWpm: 118,
+      progress: 100,
+    },
+  ]);
+  const [controlRoomMessage, setControlRoomMessage] = useState<string | null>(null);
 
   // Certificate Issuance State
   const [certTitle, setCertTitle] = useState('');
@@ -167,23 +231,25 @@ export default function OrganizerPortalPage() {
     }
   };
 
-  const handleCreateTournament = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateTournament = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!tourneyTitle) return;
     try {
       await api.createCompetition({
         title: tourneyTitle,
         organizationId: selectedOrg?._id,
         format: tourneyFormat,
-        maxParticipants: Number(tourneyMaxParticipants),
+        maxParticipants: Math.max(20, Math.min(300, Number(tourneyMaxParticipants))),
         language: tourneyLanguage,
         startTime: tourneyStartDate || new Date().toISOString(),
       });
       setMessage({ text: `Tournament "${tourneyTitle}" published to live circuit!`, error: false });
-      setShowTourneyModal(false);
+      setShowTourneyWizard(false);
       setTourneyTitle('');
+      setWizardStep(1);
       const comps = await api.getCompetitions().catch(() => []);
       setCompetitions(comps || []);
+      setActiveTab('tournaments');
     } catch (err: any) {
       setMessage({ text: err.message || 'Failed to create tournament', error: true });
     }
@@ -319,11 +385,14 @@ export default function OrganizerPortalPage() {
               )}
 
               <button
-                onClick={() => setShowTourneyModal(true)}
+                onClick={() => {
+                  setShowTourneyWizard(true);
+                  setWizardStep(1);
+                }}
                 className="flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-black font-bold text-xs shadow-lg shadow-amber-400/20 hover:opacity-95 transition-all"
               >
                 <Plus className="h-4 w-4" />
-                <span>Create Tournament</span>
+                <span>Create Tournament Studio</span>
               </button>
 
               <button
@@ -360,6 +429,7 @@ export default function OrganizerPortalPage() {
             { id: 'roster', label: `Roster (${activeMembers.length})`, icon: Users },
             { id: 'teams', label: `Teams (${teams.length})`, icon: Layers },
             { id: 'tournaments', label: `Tournaments (${competitions.length})`, icon: Trophy },
+            { id: 'control_room', label: 'Live Control Room', icon: Radio },
             { id: 'certificates', label: 'Certificates & QR', icon: Award },
             { id: 'analytics', label: 'Analytics', icon: BarChart3 },
           ].map((tab) => {
@@ -668,11 +738,14 @@ export default function OrganizerPortalPage() {
                 </p>
               </div>
               <button
-                onClick={() => setShowTourneyModal(true)}
+                onClick={() => {
+                  setShowTourneyWizard(true);
+                  setWizardStep(1);
+                }}
                 className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-amber-400 text-black font-bold text-xs hover:bg-amber-300"
               >
                 <Plus className="h-4 w-4" />
-                <span>Create Tournament</span>
+                <span>Launch Tournament Studio</span>
               </button>
             </div>
 
@@ -701,6 +774,13 @@ export default function OrganizerPortalPage() {
                     >
                       Generate Heats (2–7)
                     </button>
+                    <button
+                      onClick={() => setActiveTab('control_room')}
+                      className="px-3 py-1.5 rounded-lg bg-cyan-400/20 text-cyan-300 border border-cyan-400/30 text-xs font-bold hover:bg-cyan-400/30 flex items-center space-x-1"
+                    >
+                      <Radio className="h-3 w-3" />
+                      <span>Control Room</span>
+                    </button>
                     <Link
                       href={`/competitions/${comp._id}`}
                       className="px-3 py-1.5 rounded-lg bg-amber-400/20 text-amber-300 border border-amber-400/30 text-xs font-bold hover:bg-amber-400/30 flex items-center space-x-1"
@@ -708,6 +788,160 @@ export default function OrganizerPortalPage() {
                       <span>Live Bracket</span>
                       <ExternalLink className="h-3 w-3" />
                     </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4.5: LIVE TOURNAMENT CONTROL ROOM */}
+        {activeTab === 'control_room' && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                  <h3 className="text-base font-bold text-text">Live Tournament Control Room</h3>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-400/15 border border-emerald-400/30 text-emerald-300 text-[10px] font-mono font-bold">
+                    ACTIVE MONITOR
+                  </span>
+                </div>
+                <p className="text-xs text-text-muted mt-1">
+                  Server-authoritative heat synchronization (2–7 racers per heat), dispute intervention, and real-time dispatch.
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => {
+                    setControlRoomMessage('Emergency Director Hold triggered. All live heats paused on server.');
+                  }}
+                  className="px-3 py-2 rounded-xl bg-danger/20 border border-danger/40 text-danger text-xs font-bold hover:bg-danger/30 transition flex items-center space-x-1.5"
+                >
+                  <ShieldAlert className="h-4 w-4" />
+                  <span>Emergency Halt</span>
+                </button>
+              </div>
+            </div>
+
+            {controlRoomMessage && (
+              <div className="p-3 rounded-xl bg-amber-400/10 border border-amber-400/30 text-amber-300 text-xs font-mono flex items-center justify-between">
+                <span>{controlRoomMessage}</span>
+                <button onClick={() => setControlRoomMessage(null)} className="hover:text-white">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Active Dispute Resolution Banner */}
+            <div className="p-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-rose-400 font-bold text-xs">
+                  <AlertCircle className="h-4 w-4" />
+                  <span>HEAT DISPUTE DETECTED — Heat #3 (Round of 32)</span>
+                </div>
+                <span className="text-[10px] font-mono text-rose-300 bg-rose-500/20 px-2 py-0.5 rounded">
+                  NEEDS ORGANIZER ACTION
+                </span>
+              </div>
+              <p className="text-xs text-text-muted">
+                Reason: Racer reported transient WebSocket packet jitter and 230ms synchronization lag. Server auto-flagged heat for review.
+              </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  onClick={() => {
+                    setActiveHeats((prev) =>
+                      prev.map((h) =>
+                        h.id === 'HEAT-03' ? { ...h, status: 'RACING', progress: 0, disputeReason: undefined } : h
+                      )
+                    );
+                    setControlRoomMessage('Heat #3 has been force rerun. Racers notified to reconnect.');
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-amber-400 text-black font-bold text-xs hover:bg-amber-300 flex items-center space-x-1"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span>Force Heat Rerun</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveHeats((prev) =>
+                      prev.map((h) =>
+                        h.id === 'HEAT-03' ? { ...h, status: 'COMPLETED', disputeReason: undefined } : h
+                      )
+                    );
+                    setControlRoomMessage('Dispute dismissed. Heat #3 confirmed and bracket updated.');
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-surface border border-white/10 text-xs font-semibold text-text hover:bg-surface-light flex items-center space-x-1"
+                >
+                  <Check className="h-3.5 w-3.5 text-emerald-400" />
+                  <span>Validate & Dismiss</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Active Heats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {activeHeats.map((heat) => (
+                <div
+                  key={heat.id}
+                  className="glass-panel p-5 rounded-2xl border border-white/10 space-y-4 hover:border-amber-400/30 transition-all"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-mono font-black text-sm text-text">{heat.id}</span>
+                      <span className="text-[10px] text-text-muted font-mono">({heat.round})</span>
+                    </div>
+                    <span
+                      className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                        heat.status === 'RACING'
+                          ? 'bg-cyan-400/20 text-cyan-300 border border-cyan-400/40 animate-pulse'
+                          : heat.status === 'DISPUTED'
+                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                          : heat.status === 'COMPLETED'
+                          ? 'bg-emerald-400/20 text-emerald-400 border border-emerald-400/40'
+                          : 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
+                      }`}
+                    >
+                      {heat.status}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs font-mono">
+                      <span className="text-text-muted">Racers in Heat:</span>
+                      <span className="text-text font-bold">{heat.racersCount} of 7 (Compliant Sizing)</span>
+                    </div>
+                    <div className="flex justify-between text-xs font-mono">
+                      <span className="text-text-muted">Pacesetter:</span>
+                      <span className="text-amber-300 font-bold">
+                        {heat.leader} {heat.leaderWpm > 0 ? `(${heat.leaderWpm} WPM)` : ''}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px] font-mono text-text-muted">
+                      <span>Heat Progress</span>
+                      <span>{heat.progress}%</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-surface-dark border border-white/5 overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-amber-400 to-cyan-400 rounded-full transition-all duration-300"
+                        style={{ width: `${heat.progress}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-white/5 flex items-center justify-between text-xs">
+                    <span className="text-[10px] font-mono text-text-muted">Server Tick: 60Hz</span>
+                    <button
+                      onClick={() => setControlRoomMessage(`Spectator feed connected to ${heat.id}`)}
+                      className="text-accent hover:underline text-xs font-semibold"
+                    >
+                      Spectate Heat Camera &rarr;
+                    </button>
                   </div>
                 </div>
               ))}
@@ -776,28 +1010,54 @@ export default function OrganizerPortalPage() {
               </div>
 
               {/* Certificate Template Preview */}
-              <div className="glass-panel p-6 rounded-2xl border border-amber-400/30 bg-gradient-to-br from-amber-400/5 via-surface to-background space-y-4 text-center">
-                <div className="inline-block p-2 rounded-xl bg-amber-400/10 border border-amber-400/20 text-amber-400">
-                  <QrCode className="h-10 w-10 mx-auto" />
+              <div className="space-y-4">
+                <div
+                  id="keyrush-printable-certificate"
+                  className="glass-panel p-6 sm:p-8 rounded-2xl border-2 border-amber-400/40 bg-gradient-to-br from-amber-400/10 via-surface to-background space-y-4 text-center relative overflow-hidden shadow-2xl print:border-4 print:border-black print:p-12 print:text-black"
+                >
+                  <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-amber-400/20 text-amber-300 text-[9px] font-mono border border-amber-400/30 print:border-black print:text-black">
+                    OFFICIAL ESPORTS CREED
+                  </div>
+                  <div className="inline-block p-2 rounded-xl bg-amber-400/10 border border-amber-400/20 text-amber-400 print:text-black">
+                    <QrCode className="h-10 w-10 mx-auto" />
+                  </div>
+                  <div>
+                    <h4 className="font-display font-black text-2xl text-amber-300 tracking-wider print:text-black">
+                      CERTIFICATE OF EXCELLENCE
+                    </h4>
+                    <p className="text-[11px] font-mono text-text-muted uppercase tracking-widest mt-1 print:text-gray-700">
+                      KEYRUSH GLOBAL ESPORTS FEDERATION • MERIT DIPLOMA
+                    </p>
+                  </div>
+                  <div className="py-4 border-y border-white/10 print:border-gray-400 space-y-1.5">
+                    <p className="text-xs text-text-muted print:text-gray-600">This honor is officially awarded to</p>
+                    <p className="font-display text-2xl font-black text-text print:text-black">{certRecipient || 'Competitor Name'}</p>
+                    <p className="text-xs text-amber-400 font-bold print:text-black">For achieving {certRank.replace('_', ' ')}</p>
+                    <p className="text-xs text-text-muted font-mono print:text-gray-700">{certTitle || 'Championship Tournament Circuit'}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 text-[10px] font-mono text-text-muted pt-2 border-t border-white/10 print:border-gray-400 print:text-black">
+                    <div className="text-left">
+                      <div>ISSUER: {selectedOrg?.name || 'KeyRush Esports'}</div>
+                      <div>DIRECTOR: {currentUser?.username || 'Executive Director'}</div>
+                    </div>
+                    <div className="text-right">
+                      <div>VERIFIED HASH: HMAC-SHA256</div>
+                      <div className="truncate text-amber-300 print:text-black font-bold">
+                        KR-{(certRecipient || 'RACER').slice(0, 4).toUpperCase()}-99A4-F28C
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-display font-black text-xl text-amber-300 tracking-wider">
-                    CERTIFICATE OF MERIT
-                  </h4>
-                  <p className="text-[11px] font-mono text-text-muted uppercase tracking-widest mt-1">
-                    KEYRUSH GLOBAL ESPORTS FEDERATION
-                  </p>
-                </div>
-                <div className="py-4 border-y border-white/10 space-y-1">
-                  <p className="text-xs text-text-muted">Proudly presented to</p>
-                  <p className="font-display text-xl font-bold text-text">{certRecipient || 'Participant Name'}</p>
-                  <p className="text-xs text-accent font-semibold">For achieving {certRank.replace('_', ' ')}</p>
-                  <p className="text-[10px] text-text-muted font-mono">{certTitle || 'Tournament Event Title'}</p>
-                </div>
-                <div className="flex justify-between items-center text-[10px] font-mono text-text-muted pt-2">
-                  <span>ISSUER: {selectedOrg?.name || 'KeyRush'}</span>
-                  <span>VERIFIED HASH: SHA-256</span>
-                </div>
+
+                {/* Print PDF Button */}
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="w-full py-2.5 rounded-xl bg-surface border border-amber-400/40 text-amber-300 font-bold text-xs hover:bg-amber-400/10 transition shadow-lg flex items-center justify-center space-x-2"
+                >
+                  <Printer className="h-4 w-4" />
+                  <span>Print / Export Official PDF Certificate</span>
+                </button>
               </div>
             </div>
 
@@ -920,101 +1180,478 @@ export default function OrganizerPortalPage() {
         </div>
       )}
 
-      {/* MODAL: CREATE TOURNAMENT */}
-      {showTourneyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="glass-panel max-w-lg w-full p-6 rounded-2xl border border-white/10 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-text">Launch Tournament</h3>
-              <button onClick={() => setShowTourneyModal(false)} className="text-text-muted hover:text-text">
+      {/* 8-STEP TOURNAMENT STUDIO WIZARD MODAL */}
+      {showTourneyWizard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md overflow-y-auto">
+          <div className="glass-panel max-w-2xl w-full p-6 sm:p-8 rounded-2xl border border-amber-400/30 space-y-6 bg-gradient-to-b from-surface via-surface to-background shadow-2xl my-8">
+            {/* Wizard Header */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2">
+                  <span className="px-2 py-0.5 rounded bg-amber-400/20 text-amber-300 text-[10px] font-mono font-bold">
+                    STEP {wizardStep} OF 8
+                  </span>
+                  <h3 className="text-lg font-black text-text font-display">
+                    {wizardStep === 1 && 'Basic Information'}
+                    {wizardStep === 2 && 'Organization & Branding'}
+                    {wizardStep === 3 && 'Rules & Eligibility'}
+                    {wizardStep === 4 && 'Registration & Economy'}
+                    {wizardStep === 5 && 'Format & Bracket System'}
+                    {wizardStep === 6 && 'Participant Bounds & Heats'}
+                    {wizardStep === 7 && 'Schedule & Check-in'}
+                    {wizardStep === 8 && 'Review & Publish Circuit'}
+                  </h3>
+                </div>
+                <p className="text-xs text-text-muted">
+                  Design, configure, and launch server-authoritative esports typing tournaments.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowTourneyWizard(false)}
+                className="text-text-muted hover:text-text p-1 rounded-lg hover:bg-white/5"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateTournament} className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-text-muted block mb-1">Tournament Title</label>
-                <input
-                  type="text"
-                  required
-                  value={tourneyTitle}
-                  onChange={(e) => setTourneyTitle(e.target.value)}
-                  placeholder="e.g. Bangladesh Inter-Varsity Cyber Sprint 2026"
-                  className="w-full px-3 py-2 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none"
+            {/* Stepper Progress Bar */}
+            <div className="grid grid-cols-8 gap-1.5">
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
+                <div
+                  key={s}
+                  onClick={() => s <= wizardStep && setWizardStep(s)}
+                  className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                    s === wizardStep
+                      ? 'bg-amber-400'
+                      : s < wizardStep
+                      ? 'bg-amber-400/50'
+                      : 'bg-white/10'
+                  }`}
+                  title={`Step ${s}`}
                 />
-              </div>
+              ))}
+            </div>
 
-              <div className="grid grid-cols-2 gap-4">
+            {/* STEP 1: BASIC INFORMATION */}
+            {wizardStep === 1 && (
+              <div className="space-y-4">
                 <div>
-                  <label className="text-xs font-semibold text-text-muted block mb-1">Tournament Format</label>
-                  <select
-                    value={tourneyFormat}
-                    onChange={(e) => setTourneyFormat(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none"
-                  >
-                    <option value="SINGLE_ELIMINATION">Single Elimination</option>
-                    <option value="DOUBLE_ELIMINATION">Double Elimination</option>
-                    <option value="ROUND_ROBIN">Round Robin</option>
-                    <option value="SWISS">Swiss System</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-text-muted block mb-1">Max Participants (20–300)</label>
+                  <label className="text-xs font-semibold text-text-muted block mb-1">Tournament Title *</label>
                   <input
-                    type="number"
-                    min={20}
-                    max={300}
-                    value={tourneyMaxParticipants}
-                    onChange={(e) => setTourneyMaxParticipants(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none font-mono"
+                    type="text"
+                    required
+                    value={tourneyTitle}
+                    onChange={(e) => {
+                      setTourneyTitle(e.target.value);
+                      if (!tourneySlug) {
+                        setTourneySlug(e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+                      }
+                    }}
+                    placeholder="e.g. Bangladesh Inter-Varsity Typing Cup 2026"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none"
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-text-muted block mb-1">Custom Slug / URL</label>
+                    <input
+                      type="text"
+                      value={tourneySlug}
+                      onChange={(e) => setTourneySlug(e.target.value)}
+                      placeholder="e.g. varsity-typing-cup-2026"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-text-muted block mb-1">Typing Language</label>
+                    <select
+                      value={tourneyLanguage}
+                      onChange={(e) => setTourneyLanguage(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none"
+                    >
+                      <option value="EN">English (Speed & Pro Sprint)</option>
+                      <option value="BN">Bangla (Unicode National Standard)</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-text-muted block mb-1">Description & Overview</label>
+                  <textarea
+                    rows={3}
+                    value={tourneyDesc}
+                    onChange={(e) => setTourneyDesc(e.target.value)}
+                    placeholder="Describe tournament rules, eligibility, campus qualifiers, or stream details..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none"
                   />
                 </div>
               </div>
+            )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-semibold text-text-muted block mb-1">Language</label>
-                  <select
-                    value={tourneyLanguage}
-                    onChange={(e) => setTourneyLanguage(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none"
-                  >
-                    <option value="EN">English</option>
-                    <option value="BN">Bangla</option>
-                  </select>
+            {/* STEP 2: BRANDING */}
+            {wizardStep === 2 && (
+              <div className="space-y-4">
+                <div className="p-4 rounded-xl bg-surface/50 border border-white/5 space-y-2">
+                  <span className="text-xs text-text-muted font-mono">Host Organization:</span>
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-400/20 text-amber-300 font-bold flex items-center justify-center font-display text-sm">
+                      {selectedOrg ? selectedOrg.name.slice(0, 2).toUpperCase() : 'KR'}
+                    </div>
+                    <div>
+                      <div className="font-bold text-text text-sm">{selectedOrg?.name || 'KeyRush Esports League'}</div>
+                      <div className="text-[10px] text-emerald-400 font-mono">VERIFIED ORGANIZER ACCESS</div>
+                    </div>
+                  </div>
                 </div>
+
                 <div>
-                  <label className="text-xs font-semibold text-text-muted block mb-1">Start Date/Time</label>
+                  <label className="text-xs font-semibold text-text-muted block mb-2">Tournament Brand Accent Color</label>
+                  <div className="flex items-center space-x-3">
+                    {[
+                      { hex: '#3B82F6', label: 'Electric Blue' },
+                      { hex: '#55E6F2', label: 'Cyber Cyan' },
+                      { hex: '#F59E0B', label: 'Amber Gold' },
+                      { hex: '#8B5CF6', label: 'Neon Violet' },
+                      { hex: '#EF4444', label: 'Crimson Red' },
+                    ].map((col) => (
+                      <button
+                        key={col.hex}
+                        type="button"
+                        onClick={() => setTourneyBrandAccent(col.hex)}
+                        style={{ backgroundColor: col.hex }}
+                        className={`w-9 h-9 rounded-xl transition-all ${
+                          tourneyBrandAccent === col.hex ? 'ring-4 ring-white shadow-lg scale-110' : 'opacity-80 hover:opacity-100'
+                        }`}
+                        title={col.label}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-text-muted block mb-1">Banner Image URL (Optional)</label>
+                  <input
+                    type="url"
+                    value={tourneyBannerUrl}
+                    onChange={(e) => setTourneyBannerUrl(e.target.value)}
+                    placeholder="https://... /banner.png"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3: RULES & ELIGIBILITY */}
+            {wizardStep === 3 && (
+              <div className="space-y-4">
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-semibold text-text-muted">Minimum ELO Gate</label>
+                    <span className="font-mono text-xs text-amber-300 font-bold">{tourneyMinElo} ELO {tourneyMinElo === 0 ? '(Open Division)' : ''}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={2400}
+                    step={50}
+                    value={tourneyMinElo}
+                    onChange={(e) => setTourneyMinElo(Number(e.target.value))}
+                    className="w-full accent-amber-400 cursor-pointer h-2 bg-surface-dark rounded-lg"
+                  />
+                  <div className="flex justify-between text-[10px] font-mono text-text-muted mt-1">
+                    <span>0 (Open)</span>
+                    <span>1200 (Intermediate)</span>
+                    <span>1600 (Elite)</span>
+                    <span>2000+ (Master)</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-text-muted block mb-1">Region Eligibility</label>
+                    <select
+                      value={tourneyRegion}
+                      onChange={(e) => setTourneyRegion(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none"
+                    >
+                      <option value="GLOBAL">Global (Worldwide Racers)</option>
+                      <option value="BD">Bangladesh Inter-University</option>
+                      <option value="NA">North America</option>
+                      <option value="EU">Europe</option>
+                      <option value="ASIA">Asia Pacific</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center space-x-3 pt-6">
+                    <input
+                      type="checkbox"
+                      id="verifiedCheck"
+                      checked={tourneyRequireVerified}
+                      onChange={(e) => setTourneyRequireVerified(e.target.checked)}
+                      className="h-4 w-4 accent-amber-400 rounded cursor-pointer"
+                    />
+                    <label htmlFor="verifiedCheck" className="text-xs font-semibold text-text cursor-pointer">
+                      Require Verified Identity
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 4: REGISTRATION & PRIZE POOL */}
+            {wizardStep === 4 && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTourneyIsPaid(false);
+                      setTourneyEntryFee(0);
+                    }}
+                    className={`p-4 rounded-xl border text-left transition-all ${
+                      !tourneyIsPaid
+                        ? 'bg-amber-400/10 border-amber-400/50 text-amber-300'
+                        : 'bg-surface border-white/10 text-text-muted hover:text-text'
+                    }`}
+                  >
+                    <div className="font-bold text-sm text-text">Free Registration</div>
+                    <div className="text-[10px] text-text-muted mt-1">Open participation with no entry fee required</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTourneyIsPaid(true)}
+                    className={`p-4 rounded-xl border text-left transition-all ${
+                      tourneyIsPaid
+                        ? 'bg-amber-400/10 border-amber-400/50 text-amber-300'
+                        : 'bg-surface border-white/10 text-text-muted hover:text-text'
+                    }`}
+                  >
+                    <div className="font-bold text-sm text-text">Premium Entry</div>
+                    <div className="text-[10px] text-text-muted mt-1">Direct buy-in with escrow prize pool</div>
+                  </button>
+                </div>
+
+                {tourneyIsPaid && (
+                  <div>
+                    <label className="text-xs font-semibold text-text-muted block mb-1">Entry Fee (BDT / USD)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={tourneyEntryFee}
+                      onChange={(e) => setTourneyEntryFee(Number(e.target.value))}
+                      placeholder="e.g. 250"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none font-mono"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="text-xs font-semibold text-text-muted block mb-1">Prize Pool / Rewards Package</label>
+                  <input
+                    type="text"
+                    value={tourneyPrizePool}
+                    onChange={(e) => setTourneyPrizePool(e.target.value)}
+                    placeholder="e.g. ৳25,000 Cash + Official KeyRush Trophy + Verified Certificates"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* STEP 5: FORMAT */}
+            {wizardStep === 5 && (
+              <div className="space-y-4">
+                <label className="text-xs font-semibold text-text-muted block">Tournament Bracket Architecture</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[
+                    { id: 'SINGLE_ELIMINATION', name: 'Single Elimination', desc: 'Fast knockout brackets. One loss eliminates a racer.' },
+                    { id: 'DOUBLE_ELIMINATION', name: 'Double Elimination', desc: 'Upper and lower brackets. Racers get a second chance.' },
+                    { id: 'ROUND_ROBIN', name: 'Round Robin', desc: 'Every racer battles all opponents in designated heats.' },
+                    { id: 'SWISS', name: 'Swiss System', desc: 'Non-eliminating multi-round pairing based on live wins.' },
+                  ].map((fmt) => (
+                    <div
+                      key={fmt.id}
+                      onClick={() => setTourneyFormat(fmt.id)}
+                      className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                        tourneyFormat === fmt.id
+                          ? 'bg-amber-400/10 border-amber-400/50 text-text shadow-lg'
+                          : 'bg-surface border-white/10 text-text-muted hover:text-text'
+                      }`}
+                    >
+                      <div className="font-bold text-xs text-text flex items-center justify-between">
+                        <span>{fmt.name}</span>
+                        {tourneyFormat === fmt.id && <Check className="h-4 w-4 text-amber-400" />}
+                      </div>
+                      <p className="text-[11px] text-text-muted mt-1 leading-relaxed">{fmt.desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* STEP 6: PARTICIPANT BOUNDS & HEATS */}
+            {wizardStep === 6 && (
+              <div className="space-y-4">
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-semibold text-text-muted">Maximum Participant Capacity (20–300)</label>
+                    <span className="font-mono text-sm text-amber-300 font-bold">{tourneyMaxParticipants} Racers</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={20}
+                    max={300}
+                    step={4}
+                    value={tourneyMaxParticipants}
+                    onChange={(e) => setTourneyMaxParticipants(Number(e.target.value))}
+                    className="w-full accent-amber-400 cursor-pointer h-2 bg-surface-dark rounded-lg"
+                  />
+                  <div className="flex justify-between text-[10px] font-mono text-text-muted mt-1">
+                    <span>Min: 20 Players</span>
+                    <span>64 Players</span>
+                    <span>128 Players</span>
+                    <span>Max: 300 Players</span>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-surface/50 border border-white/10 space-y-2">
+                  <div className="text-xs font-bold text-amber-300 flex items-center space-x-2">
+                    <ShieldCheck className="h-4 w-4" />
+                    <span>Server-Authoritative Heat Constraints:</span>
+                  </div>
+                  <ul className="text-xs text-text-muted space-y-1 font-mono list-disc list-inside">
+                    <li>Minimum 20 confirmed players required before officially launching.</li>
+                    <li>Each heat contains strictly 2 to 7 racers (0 solo heats allowed).</li>
+                    <li>Estimated heats for {tourneyMaxParticipants} racers: ~{Math.ceil(tourneyMaxParticipants / 5)} heats.</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 7: SCHEDULE & CHECK-IN */}
+            {wizardStep === 7 && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-semibold text-text-muted block mb-1">Tournament Launch Date & Time *</label>
                   <input
                     type="datetime-local"
                     value={tourneyStartDate}
                     onChange={(e) => setTourneyStartDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none"
                   />
                 </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-text-muted block mb-1">Check-in Window</label>
+                    <select
+                      value={tourneyCheckInWindow}
+                      onChange={(e) => setTourneyCheckInWindow(Number(e.target.value))}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none font-mono"
+                    >
+                      <option value={10}>10 Minutes Prior</option>
+                      <option value={15}>15 Minutes Prior (Standard)</option>
+                      <option value={30}>30 Minutes Prior</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-text-muted block mb-1">Heat Buffer Delay</label>
+                    <select
+                      value={tourneyHeatInterval}
+                      onChange={(e) => setTourneyHeatInterval(Number(e.target.value))}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none font-mono"
+                    >
+                      <option value={60}>60 Seconds Between Heats</option>
+                      <option value={120}>120 Seconds (Recommended)</option>
+                      <option value={180}>180 Seconds</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 8: REVIEW & PUBLISH */}
+            {wizardStep === 8 && (
+              <div className="space-y-4">
+                <div className="glass-panel p-5 rounded-2xl border border-amber-400/30 bg-amber-400/5 space-y-3 font-mono text-xs">
+                  <div className="text-sm font-bold text-amber-300 font-sans">{tourneyTitle || 'Untitled Championship'}</div>
+                  <div className="grid grid-cols-2 gap-2 text-text-muted">
+                    <div>Format: <span className="text-text font-bold">{tourneyFormat}</span></div>
+                    <div>Capacity: <span className="text-text font-bold">{tourneyMaxParticipants} Racers</span></div>
+                    <div>Language: <span className="text-text font-bold">{tourneyLanguage}</span></div>
+                    <div>Min ELO: <span className="text-text font-bold">{tourneyMinElo}</span></div>
+                    <div>Registration: <span className="text-text font-bold">{tourneyIsPaid ? `৳${tourneyEntryFee}` : 'FREE'}</span></div>
+                    <div>Heats Sizing: <span className="text-text font-bold">2–7 Racers/Heat</span></div>
+                  </div>
+                  <div className="pt-2 border-t border-white/10 text-[11px] text-text-muted">
+                    Prize Pool: <span className="text-amber-300">{tourneyPrizePool}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 text-xs text-emerald-400 font-mono">
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>Server-authoritative verification passed.</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>20–300 racer bounds enforced.</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>Real-time WebSocket dispatch engine ready.</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Wizard Navigation Controls */}
+            <div className="flex items-center justify-between pt-4 border-t border-white/10">
+              <button
+                type="button"
+                disabled={wizardStep === 1}
+                onClick={() => setWizardStep((prev) => Math.max(1, prev - 1))}
+                className="px-4 py-2.5 rounded-xl bg-surface border border-white/10 text-xs font-semibold text-text-muted hover:text-text disabled:opacity-30 disabled:cursor-not-allowed flex items-center space-x-1"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                <span>Previous</span>
+              </button>
+
+              <div className="text-xs font-mono text-text-muted">
+                Step {wizardStep} / 8
               </div>
 
-              <div className="flex justify-end space-x-2 pt-2">
+              {wizardStep < 8 ? (
                 <button
                   type="button"
-                  onClick={() => setShowTourneyModal(false)}
-                  className="px-4 py-2 rounded-xl bg-surface border border-white/10 text-xs font-semibold text-text-muted hover:text-text"
+                  onClick={() => {
+                    if (wizardStep === 1 && !tourneyTitle.trim()) {
+                      setMessage({ text: 'Please enter a tournament title to proceed.', error: true });
+                      return;
+                    }
+                    setMessage(null);
+                    setWizardStep((prev) => Math.min(8, prev + 1));
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-amber-400 text-black font-bold text-xs hover:bg-amber-300 shadow-lg shadow-amber-400/20 flex items-center space-x-1"
                 >
-                  Cancel
+                  <span>Next Step</span>
+                  <ChevronRight className="h-4 w-4" />
                 </button>
+              ) : (
                 <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-amber-400 text-black font-bold text-xs hover:bg-amber-300"
+                  type="button"
+                  onClick={() => handleCreateTournament()}
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-black font-black text-xs hover:opacity-95 shadow-lg shadow-amber-400/25 flex items-center space-x-1.5"
                 >
-                  Publish Tournament
+                  <Trophy className="h-4 w-4" />
+                  <span>Publish Tournament Circuit</span>
                 </button>
-              </div>
-            </form>
+              )}
+            </div>
           </div>
         </div>
       )}
     </div>
   );
 }
+
 

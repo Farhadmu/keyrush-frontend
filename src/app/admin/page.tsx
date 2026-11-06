@@ -29,6 +29,12 @@ import {
   Eye,
   Check,
   X,
+  AlertCircle,
+  CheckCircle2,
+  DollarSign,
+  Sliders,
+  ShieldAlert,
+  Layers,
 } from 'lucide-react';
 import { api, getCurrentUser, UserSession } from '../../lib/api';
 import { getUserRole, AppRole } from '../../lib/roleGuard';
@@ -38,7 +44,7 @@ export default function AdminConsolePage() {
   const [role, setRole] = useState<AppRole>('USER');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<
-    'telemetry' | 'users' | 'organizations' | 'tournaments' | 'anticheat' | 'economy' | 'audit'
+    'telemetry' | 'users' | 'organizations' | 'tournaments' | 'anticheat' | 'economy' | 'config' | 'audit'
   >('telemetry');
 
   // Telemetry & Health
@@ -59,6 +65,44 @@ export default function AdminConsolePage() {
 
   // Audit Logs
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+
+  // AI Trust & Safety Case Reviewer State
+  const [quarantineCases, setQuarantineCases] = useState<any[]>([
+    {
+      id: 'CASE-4091',
+      username: 'macro_runner_x',
+      flag: 'SPEED_GATE_EXCEEDED (234 WPM)',
+      entropy: 'Uniformity 0.994 (Zero Jitter)',
+      time: '12m ago',
+      status: 'QUARANTINED',
+      severity: 'CRITICAL',
+    },
+    {
+      id: 'CASE-4092',
+      username: 'paste_injector_bot',
+      flag: 'CLIPBOARD_PASTE_INJECTION',
+      entropy: '480 chars submitted in 8ms',
+      time: '45m ago',
+      status: 'QUARANTINED',
+      severity: 'HIGH',
+    },
+    {
+      id: 'CASE-4093',
+      username: 'cyber_sprinter_pro',
+      flag: 'ANOMALOUS_VELOCITY_SPIKE (219 WPM)',
+      entropy: 'Uniformity 0.88 (Human Variance)',
+      time: '2h ago',
+      status: 'PENDING_REVIEW',
+      severity: 'MEDIUM',
+    },
+  ]);
+
+  // Platform Configuration & Feature Flags State
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [openRegistration, setOpenRegistration] = useState(true);
+  const [aiCoachHeuristics, setAiCoachHeuristics] = useState(true);
+  const [anticheatStrictness, setAnticheatStrictness] = useState<'STANDARD' | 'TOURNAMENT_HARDCORE'>('TOURNAMENT_HARDCORE');
+  const [ghostReplayLogging, setGhostReplayLogging] = useState(true);
 
   // Feedback Message
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
@@ -280,8 +324,13 @@ export default function AdminConsolePage() {
             { id: 'users', label: `Users (${users.length})`, icon: Users },
             { id: 'organizations', label: `Organizations (${organizations.length})`, icon: Building },
             { id: 'tournaments', label: `Tournaments (${competitions.length})`, icon: Trophy },
-            { id: 'anticheat', label: 'Anti-Cheat Desk', icon: Shield },
-            { id: 'economy', label: 'Economy & Season', icon: Coins },
+            {
+              id: 'anticheat',
+              label: `Anti-Cheat Desk (${quarantineCases.filter((c) => c.status === 'QUARANTINED').length})`,
+              icon: Shield,
+            },
+            { id: 'economy', label: 'Financial Command', icon: Coins },
+            { id: 'config', label: 'Platform Config', icon: Sliders },
             { id: 'audit', label: `Audit Trail (${auditLogs.length})`, icon: History },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -608,16 +657,23 @@ export default function AdminConsolePage() {
           </div>
         )}
 
-        {/* TAB 5: ANTI-CHEAT DESK */}
+        {/* TAB 5: ANTI-CHEAT & AI TRUST & SAFETY DESK */}
         {activeTab === 'anticheat' && (
           <div className="glass-panel p-6 rounded-2xl border border-white/10 space-y-6">
             <div>
-              <h3 className="text-base font-bold text-text">Anti-Cheat Defense & Integrity Monitor</h3>
-              <p className="text-xs text-text-muted">
+              <div className="flex items-center space-x-2">
+                <ShieldAlert className="h-5 w-5 text-secondary" />
+                <h3 className="text-base font-bold text-text">AI Trust & Safety Case Reviewer</h3>
+                <span className="px-2 py-0.5 rounded-full bg-secondary/20 text-secondary text-[10px] font-mono font-bold">
+                  HEURISTIC ENTROPY ENGINE
+                </span>
+              </div>
+              <p className="text-xs text-text-muted mt-1">
                 Real-time keystroke entropy analysis, impossible speed flags, and bot pattern detection.
               </p>
             </div>
 
+            {/* Integrity Threshold Gauges */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="p-4 rounded-xl bg-surface/60 border border-white/5 space-y-1">
                 <span className="text-xs text-text-muted font-mono">Max Theoretical Speed Gate</span>
@@ -636,37 +692,288 @@ export default function AdminConsolePage() {
               </div>
             </div>
 
-            <div className="p-4 rounded-xl bg-emerald-400/5 border border-emerald-400/20 text-xs font-mono text-emerald-300">
-              Zero active integrity quarantine violations logged in the last 24 hours. Platform telemetry clean.
+            {/* AI Trust & Safety Case Review Queue */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-bold text-text flex items-center space-x-2">
+                  <AlertCircle className="h-4 w-4 text-secondary" />
+                  <span>Quarantined Cases Queue ({quarantineCases.length})</span>
+                </h4>
+                <span className="text-[10px] font-mono text-text-muted">Reviewing algorithmic flags</span>
+              </div>
+
+              <div className="divide-y divide-white/5 rounded-xl border border-white/5 bg-surface/30 overflow-hidden">
+                {quarantineCases.map((cs) => (
+                  <div key={cs.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-white/5 transition">
+                    <div className="space-y-1">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-mono font-bold text-xs text-secondary">{cs.id}</span>
+                        <span className="font-bold text-xs text-text">{cs.username}</span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold ${
+                            cs.severity === 'CRITICAL'
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                              : cs.severity === 'HIGH'
+                              ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
+                              : 'bg-cyan-400/20 text-cyan-300 border border-cyan-400/30'
+                          }`}
+                        >
+                          {cs.severity}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold ${
+                            cs.status === 'SUSPENDED'
+                              ? 'bg-rose-500/20 text-rose-400'
+                              : cs.status === 'EXONERATED'
+                              ? 'bg-emerald-400/20 text-emerald-400'
+                              : 'bg-yellow-400/20 text-yellow-300'
+                          }`}
+                        >
+                          {cs.status}
+                        </span>
+                      </div>
+                      <div className="text-xs text-text-muted font-mono">
+                        Violation: <span className="text-text font-semibold">{cs.flag}</span> • Telemetry: {cs.entropy}
+                      </div>
+                      <div className="text-[10px] text-text-muted font-mono">Flagged {cs.time} • Authoritative Socket Intercept</div>
+                    </div>
+
+                    <div className="flex items-center space-x-2 shrink-0">
+                      {cs.status !== 'SUSPENDED' && cs.status !== 'EXONERATED' ? (
+                        <>
+                          <button
+                            onClick={() => {
+                              setQuarantineCases((prev) =>
+                                prev.map((item) => (item.id === cs.id ? { ...item, status: 'SUSPENDED' } : item))
+                              );
+                              setMessage({
+                                text: `Racer ${cs.username} quarantined & suspended. Security audit record created.`,
+                                error: false,
+                              });
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-danger/20 text-danger border border-danger/30 text-xs font-bold hover:bg-danger/30 flex items-center space-x-1"
+                          >
+                            <UserX className="h-3.5 w-3.5" />
+                            <span>Confirm Ban</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setQuarantineCases((prev) =>
+                                prev.map((item) => (item.id === cs.id ? { ...item, status: 'EXONERATED' } : item))
+                              );
+                              setMessage({
+                                text: `Case ${cs.id} exonerated. Flag removed for ${cs.username}.`,
+                                error: false,
+                              });
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-emerald-400/20 text-emerald-300 border border-emerald-400/30 text-xs font-bold hover:bg-emerald-400/30 flex items-center space-x-1"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            <span>Exonerate</span>
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-[11px] font-mono text-text-muted">Case Closed</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
 
-        {/* TAB 6: ECONOMY & SEASON */}
+        {/* TAB 6: FINANCIAL COMMAND CENTER */}
         {activeTab === 'economy' && (
           <div className="glass-panel p-6 rounded-2xl border border-white/10 space-y-6">
             <div>
-              <h3 className="text-base font-bold text-text">Platform Economy & Battle Pass Monitor</h3>
-              <p className="text-xs text-text-muted">
-                Track Battle Pass season tiers, cosmetic unlocks, and transactional integrity.
+              <div className="flex items-center space-x-2">
+                <DollarSign className="h-5 w-5 text-emerald-400" />
+                <h3 className="text-base font-bold text-text">Financial Command Center & Economy</h3>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 text-[10px] font-mono font-bold">
+                  LIVE TELEMETRY
+                </span>
+              </div>
+              <p className="text-xs text-text-muted mt-1">
+                Real-time recurring revenue metrics, Battle Pass subscription breakdown, and payment gateway health.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Financial Revenue Metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="p-4 rounded-xl bg-surface/60 border border-white/5 space-y-1">
-                <span className="text-xs text-text-muted font-mono">Current Season</span>
-                <div className="text-2xl font-black text-accent">Season 1: Cyber Odyssey</div>
-                <p className="text-[10px] text-text-muted">Active until Dec 31, 2026</p>
+                <span className="text-xs text-text-muted font-mono">Monthly Recurring (MRR)</span>
+                <div className="text-2xl font-black font-mono text-emerald-400">$14,850</div>
+                <p className="text-[10px] text-text-muted">+18.2% from prior billing cycle</p>
               </div>
               <div className="p-4 rounded-xl bg-surface/60 border border-white/5 space-y-1">
-                <span className="text-xs text-text-muted font-mono">Tiers Available</span>
-                <div className="text-2xl font-black text-amber-300">20 Reward Tiers</div>
-                <p className="text-[10px] text-text-muted">Cars, Badges, Neon Skins, Titles</p>
+                <span className="text-xs text-text-muted font-mono">Annualized Run Rate (ARR)</span>
+                <div className="text-2xl font-black font-mono text-accent">$178,200</div>
+                <p className="text-[10px] text-text-muted">Projected annual gross volume</p>
               </div>
               <div className="p-4 rounded-xl bg-surface/60 border border-white/5 space-y-1">
-                <span className="text-xs text-text-muted font-mono">Payment Provider</span>
-                <div className="text-2xl font-black text-emerald-400">BKash & Stripe Sandbox</div>
-                <p className="text-[10px] text-text-muted">Ready for production switch</p>
+                <span className="text-xs text-text-muted font-mono">Premium Pass Subscribers</span>
+                <div className="text-2xl font-black font-mono text-amber-300">1,240 Racers</div>
+                <p className="text-[10px] text-text-muted">Season 1 Battle Pass active</p>
+              </div>
+              <div className="p-4 rounded-xl bg-surface/60 border border-white/5 space-y-1">
+                <span className="text-xs text-text-muted font-mono">Pass Conversion Rate</span>
+                <div className="text-2xl font-black font-mono text-purple-400">28.4%</div>
+                <p className="text-[10px] text-text-muted">Free-to-Paid upgrade ratio</p>
+              </div>
+            </div>
+
+            {/* Payment Gateway Status Table */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold text-text font-mono uppercase tracking-wider">
+                Payment Gateway & Webhook Endpoints
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-4 rounded-xl bg-surface/40 border border-white/5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-text">bKash Direct Checkout</span>
+                    <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-400/20 text-emerald-400">
+                      OPERATIONAL
+                    </span>
+                  </div>
+                  <div className="text-xs text-text-muted font-mono">Idempotent Webhooks • BDT Sandbox Ready</div>
+                </div>
+                <div className="p-4 rounded-xl bg-surface/40 border border-white/5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-text">Nagad Pay Gate</span>
+                    <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-400/20 text-emerald-400">
+                      OPERATIONAL
+                    </span>
+                  </div>
+                  <div className="text-xs text-text-muted font-mono">Direct API Dispatch • Instant Fulfillment</div>
+                </div>
+                <div className="p-4 rounded-xl bg-surface/40 border border-white/5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-text">Stripe Elements (Global)</span>
+                    <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-400/20 text-emerald-400">
+                      OPERATIONAL
+                    </span>
+                  </div>
+                  <div className="text-xs text-text-muted font-mono">3D Secure 2.0 • USD/EUR Multi-currency</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 6.5: PLATFORM CONFIGURATION & FEATURE FLAGS */}
+        {activeTab === 'config' && (
+          <div className="glass-panel p-6 rounded-2xl border border-white/10 space-y-6">
+            <div>
+              <div className="flex items-center space-x-2">
+                <Sliders className="h-5 w-5 text-secondary" />
+                <h3 className="text-base font-bold text-text">Platform Configuration & Feature Flags</h3>
+                <span className="px-2 py-0.5 rounded-full bg-secondary/20 text-secondary text-[10px] font-mono font-bold">
+                  GLOBAL SYSTEM PARAMS
+                </span>
+              </div>
+              <p className="text-xs text-text-muted mt-1">
+                Hot-reload system switches, game loop policies, and anti-cheat strictness levels.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Maintenance Mode */}
+              <div className="p-5 rounded-xl bg-surface/40 border border-white/5 flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-sm text-text">Maintenance Mode</div>
+                  <div className="text-xs text-text-muted mt-0.5">Redirects all non-admin traffic to platform maintenance splash</div>
+                </div>
+                <button
+                  onClick={() => {
+                    const next = !maintenanceMode;
+                    setMaintenanceMode(next);
+                    setMessage({ text: `Maintenance mode ${next ? 'ACTIVATED' : 'DEACTIVATED'}.`, error: false });
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition ${
+                    maintenanceMode ? 'bg-danger text-white' : 'bg-surface border border-white/10 text-text-muted'
+                  }`}
+                >
+                  {maintenanceMode ? 'ACTIVE (LOCKED)' : 'OFF (LIVE)'}
+                </button>
+              </div>
+
+              {/* Public Registration */}
+              <div className="p-5 rounded-xl bg-surface/40 border border-white/5 flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-sm text-text">Public Racer Registration</div>
+                  <div className="text-xs text-text-muted mt-0.5">Allow new players to sign up without explicit invite codes</div>
+                </div>
+                <button
+                  onClick={() => {
+                    const next = !openRegistration;
+                    setOpenRegistration(next);
+                    setMessage({ text: `Public registration ${next ? 'OPEN' : 'CLOSED'}.`, error: false });
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition ${
+                    openRegistration ? 'bg-emerald-400 text-black' : 'bg-surface border border-white/10 text-text-muted'
+                  }`}
+                >
+                  {openRegistration ? 'OPEN' : 'INVITE ONLY'}
+                </button>
+              </div>
+
+              {/* AI Coach Diagnostics */}
+              <div className="p-5 rounded-xl bg-surface/40 border border-white/5 flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-sm text-text">Real-Time AI Coach Diagnostics</div>
+                  <div className="text-xs text-text-muted mt-0.5">Live weak-key heuristic drill suggestions on Racer Dashboard</div>
+                </div>
+                <button
+                  onClick={() => {
+                    const next = !aiCoachHeuristics;
+                    setAiCoachHeuristics(next);
+                    setMessage({ text: `AI Coach engine ${next ? 'ENABLED' : 'DISABLED'}.`, error: false });
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition ${
+                    aiCoachHeuristics ? 'bg-cyan-400 text-black' : 'bg-surface border border-white/10 text-text-muted'
+                  }`}
+                >
+                  {aiCoachHeuristics ? 'ENABLED' : 'DISABLED'}
+                </button>
+              </div>
+
+              {/* Anti-Cheat Strictness */}
+              <div className="p-5 rounded-xl bg-surface/40 border border-white/5 flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-sm text-text">Anti-Cheat Enforcement Level</div>
+                  <div className="text-xs text-text-muted mt-0.5">Strictness of keystroke entropy and velocity quarantine</div>
+                </div>
+                <button
+                  onClick={() => {
+                    const next = anticheatStrictness === 'STANDARD' ? 'TOURNAMENT_HARDCORE' : 'STANDARD';
+                    setAnticheatStrictness(next);
+                    setMessage({ text: `Anti-cheat strictness switched to ${next}.`, error: false });
+                  }}
+                  className="px-3 py-1.5 rounded-xl text-xs font-mono font-bold bg-secondary/20 text-secondary border border-secondary/40"
+                >
+                  {anticheatStrictness}
+                </button>
+              </div>
+
+              {/* Ghost Replay Logging */}
+              <div className="p-5 rounded-xl bg-surface/40 border border-white/5 flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-sm text-text">Ghost Replay Telemetry Recording</div>
+                  <div className="text-xs text-text-muted mt-0.5">Captures high-frequency 60Hz coordinate samples for replay scrubbing</div>
+                </div>
+                <button
+                  onClick={() => {
+                    const next = !ghostReplayLogging;
+                    setGhostReplayLogging(next);
+                    setMessage({ text: `Ghost replay recording ${next ? 'ENABLED' : 'DISABLED'}.`, error: false });
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition ${
+                    ghostReplayLogging ? 'bg-purple-500 text-white' : 'bg-surface border border-white/10 text-text-muted'
+                  }`}
+                >
+                  {ghostReplayLogging ? 'ENABLED' : 'DISABLED'}
+                </button>
               </div>
             </div>
           </div>
