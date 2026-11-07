@@ -131,12 +131,49 @@ export const api = {
   getCompetitions: (orgId?: string) => apiFetch(`/competitions${orgId ? `?organizationId=${orgId}` : ''}`),
   getCompetition: (idOrSlug: string) => apiFetch(`/competitions/${idOrSlug}`),
   createCompetition: (payload: any) => apiFetch('/competitions', { method: 'POST', body: JSON.stringify(payload) }),
-  registerCompetition: (id: string) => apiFetch(`/competitions/${id}/register`, { method: 'POST' }),
-  getCompetitionRegistrations: (id: string) => apiFetch(`/competitions/${id}/registrations`),
+  registerCompetition: (id: string, studentData?: any) =>
+    apiFetch(`/competitions/${id}/register`, { method: 'POST', body: JSON.stringify(studentData || {}) }),
+  registerStudent: (id: string, studentData: any) =>
+    apiFetch(`/competitions/${id}/register`, { method: 'POST', body: JSON.stringify(studentData) }),
+  checkInParticipant: (id: string) =>
+    apiFetch(`/competitions/${id}/check-in`, { method: 'POST' }),
+  getMyRegistration: (id: string) =>
+    apiFetch(`/competitions/${id}/my-registration`),
+  getCompetitionRegistrations: (id: string, query?: { status?: string; verificationStatus?: string; checkInStatus?: string; search?: string }) => {
+    const params = new URLSearchParams();
+    if (query?.status) params.append('status', query.status);
+    if (query?.verificationStatus) params.append('verificationStatus', query.verificationStatus);
+    if (query?.checkInStatus) params.append('checkInStatus', query.checkInStatus);
+    if (query?.search) params.append('search', query.search);
+    const qs = params.toString();
+    return apiFetch(`/competitions/${id}/registrations${qs ? `?${qs}` : ''}`);
+  },
+  verifyStudentRegistration: (id: string, regId: string, status: string, notes?: string) =>
+    apiFetch(`/competitions/${id}/registrations/${regId}/verify`, { method: 'PATCH', body: JSON.stringify({ status, notes }) }),
+  exportRegistrationsCsv: (id: string) =>
+    apiFetch(`/competitions/${id}/registrations/export-csv`),
+  updateCompetitionSchedule: (id: string, schedule: any) =>
+    apiFetch(`/competitions/${id}/schedule`, { method: 'PATCH', body: JSON.stringify(schedule) }),
+  updateCompetitionStatus: (id: string, status: string) =>
+    apiFetch(`/competitions/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
   getHeats: (compId: string, round?: number) =>
     apiFetch(`/events/${compId}/heats${round ? `?round=${round}` : ''}`),
-  generateHeats: (compId: string) =>
-    apiFetch(`/events/${compId}/generate-heats`, { method: 'POST' }),
+  generateHeats: (compId: string, seedingRule?: string) =>
+    apiFetch(`/events/${compId}/generate-heats`, { method: 'POST', body: JSON.stringify({ seedingRule }) }),
+  startHeat: (compId: string, heatNumber: number, roundNumber: number = 1) =>
+    apiFetch(`/events/${compId}/heats/${heatNumber}/start`, { method: 'POST', body: JSON.stringify({ roundNumber }) }),
+  recordHeatDispute: (compId: string, heatNumber: number, reason: string, roundNumber: number = 1) =>
+    apiFetch(`/events/${compId}/heats/${heatNumber}/dispute`, { method: 'POST', body: JSON.stringify({ reason, roundNumber }) }),
+  resolveHeatDispute: (compId: string, heatNumber: number, action: 'RERUN' | 'VALIDATE', notes?: string, roundNumber: number = 1) =>
+    apiFetch(`/events/${compId}/heats/${heatNumber}/resolve-dispute`, { method: 'POST', body: JSON.stringify({ action, notes, roundNumber }) }),
+  reassignParticipant: (compId: string, payload: { roundNumber: number; fromHeat: number; toHeat: number; userId: string }) =>
+    apiFetch(`/events/${compId}/heats/reassign`, { method: 'POST', body: JSON.stringify(payload) }),
+  advanceRound: (compId: string, currentRound: number = 1, topPerHeat: number = 2) =>
+    apiFetch(`/events/${compId}/advance-round`, { method: 'POST', body: JSON.stringify({ currentRound, topPerHeat }) }),
+  completeCompetition: (compId: string) =>
+    apiFetch(`/events/${compId}/complete`, { method: 'POST' }),
+  getLiveControlRoomStatus: (compId: string) =>
+    apiFetch(`/events/${compId}/control-room`),
   getBracket: (id: string) => apiFetch(`/competitions/${id}/bracket`),
   generateBracket: (id: string) => apiFetch(`/competitions/${id}/bracket/generate`, { method: 'POST' }),
   updateMatchScore: (matchId: string, payload: any) =>

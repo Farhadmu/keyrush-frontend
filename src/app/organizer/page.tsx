@@ -129,6 +129,14 @@ export default function OrganizerPortalPage() {
   const [certRank, setCertRank] = useState('CHAMPION');
   const [issuedCertificates, setIssuedCertificates] = useState<any[]>([]);
 
+  // Tournament Management & Control Room State
+  const [selectedCompId, setSelectedCompId] = useState<string>('');
+  const [controlRoomData, setControlRoomData] = useState<any | null>(null);
+  const [compRegistrations, setCompRegistrations] = useState<any[]>([]);
+  const [seedingSelection, setSeedingSelection] = useState<string>('INSTITUTION_BALANCED');
+  const [controlRoomFilter, setControlRoomFilter] = useState<'ALL' | 'PENDING' | 'VERIFIED' | 'REJECTED'>('ALL');
+  const [isRefreshingControl, setIsRefreshingControl] = useState(false);
+
   useEffect(() => {
     const user = getCurrentUser();
     if (!user) {
@@ -156,6 +164,11 @@ export default function OrganizerPortalPage() {
       ]);
       setOrganizations(orgs || []);
       setCompetitions(comps || []);
+
+      if (comps && comps.length > 0) {
+        setSelectedCompId(comps[0]._id);
+        loadControlRoom(comps[0]._id);
+      }
 
       if (orgs && orgs.length > 0) {
         const primaryOrg = orgs[0];
@@ -231,27 +244,207 @@ export default function OrganizerPortalPage() {
     }
   };
 
+  const loadControlRoom = async (compId: string) => {
+    if (!compId) return;
+    setIsRefreshingControl(true);
+    try {
+      const [status, regs] = await Promise.all([
+        api.getLiveControlRoomStatus(compId).catch(() => null),
+        api.getCompetitionRegistrations(compId).catch(() => []),
+      ]);
+      if (status) {
+        setControlRoomData(status);
+        if (status.heats && status.heats.length > 0) {
+          setActiveHeats(
+            status.heats.map((h: any) => ({
+              id: `HEAT-${String(h.heatNumber).padStart(2, '0')}`,
+              heatNumber: h.heatNumber,
+              roundNumber: h.roundNumber || 1,
+              roomId: h.roomId,
+              round: `Round ${h.roundNumber || 1}`,
+              status: h.status,
+              racersCount: h.participants?.length || 0,
+              participants: h.participants || [],
+              hasDispute: h.disputeState?.hasDispute || h.status === 'DISPUTED',
+              disputeReason: h.disputeState?.reason || '',
+              leader: h.participants?.[0]?.username || 'TBD',
+              leaderWpm: h.participants?.[0]?.netWpm || 0,
+              progress: h.status === 'COMPLETED' ? 100 : h.status === 'RACING' ? 65 : 0,
+            })),
+          );
+        }
+      }
+      setCompRegistrations(regs || []);
+    } catch {
+      // ignore
+    } finally {
+      setIsRefreshingControl(false);
+    }
+  };
+
   const handleCreateTournament = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!tourneyTitle) return;
     try {
+      const slugVal =
+        tourneySlug ||
+        tourneyTitle
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)/g, '');
+      const regStart = new Date();
+      const regEnd = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+      const chkStart = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+      const chkEnd = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000);
+      const evStart = tourneyStartDate
+        ? new Date(tourneyStartDate)
+        : new Date(Date.now() + 4 * 24 * 60 * 60 * 1000);
+      const evEnd = new Date(evStart.getTime() + 6 * 60 * 60 * 1000);
+
       await api.createCompetition({
         title: tourneyTitle,
+        slug: slugVal,
+        description:
+          tourneyDesc ||
+          'National inter-university typing championship. Compete for institutional glory and digital credentials.',
+        category: 'UNIVERSITY_ESPORTS',
+        institution: selectedOrg?.name || 'Dhaka University Esports',
+        contactPerson: currentUser?.username || 'Tournament Director',
+        contactEmail: currentUser?.email || 'director@keyrush.gg',
+        country: 'BD',
+        city: 'Dhaka',
         organizationId: selectedOrg?._id,
-        format: tourneyFormat,
+        tournamentFormat: tourneyFormat,
+        minParticipants: 20,
         maxParticipants: Math.max(20, Math.min(300, Number(tourneyMaxParticipants))),
         language: tourneyLanguage,
-        startTime: tourneyStartDate || new Date().toISOString(),
+        seedingRule: seedingSelection,
+        registrationStart: regStart.toISOString(),
+        registrationEnd: regEnd.toISOString(),
+        checkInStart: chkStart.toISOString(),
+        checkInEnd: chkEnd.toISOString(),
+        eventStart: evStart.toISOString(),
+        eventEnd: evEnd.toISOString(),
+        timezone: 'Asia/Dhaka',
+        breakIntervalSeconds: tourneyHeatInterval || 120,
       });
+
       setMessage({ text: `Tournament "${tourneyTitle}" published to live circuit!`, error: false });
       setShowTourneyWizard(false);
       setTourneyTitle('');
       setWizardStep(1);
       const comps = await api.getCompetitions().catch(() => []);
       setCompetitions(comps || []);
+      if (comps && comps.length > 0) {
+        setSelectedCompId(comps[comps.length - 1]._id);
+        loadControlRoom(comps[comps.length - 1]._id);
+      }
       setActiveTab('tournaments');
     } catch (err: any) {
       setMessage({ text: err.message || 'Failed to create tournament', error: true });
+    }
+  };
+
+  const handleDispatchHeat = async (heatNumber: number, roundNumber: number = 1) => {
+    if (!selectedCompId) return;
+    try {
+      await api.startHeat(selectedCompId, heatNumber, roundNumber);
+      setMessage({ text: `Heat #${heatNumber} dispatched! Room active on server.`, error: false });
+      loadControlRoom(selectedCompId);
+    } catch (err: any) {
+      setMessage({ text: err.message || 'Heat dispatch failed', error: true });
+    }
+  };
+
+  const handleForceRerun = async (heatNumber: number, roundNumber: number = 1) => {
+    if (!selectedCompId) return;
+    try {
+      await api.resolveHeatDispute(
+        selectedCompId,
+        heatNumber,
+        'RERUN',
+        'Organizer manual reset / rerun',
+        roundNumber,
+      );
+      setMessage({ text: `Heat #${heatNumber} dispute resolved: RERUN scheduled.`, error: false });
+      loadControlRoom(selectedCompId);
+    } catch (err: any) {
+      setMessage({ text: err.message || 'Action failed', error: true });
+    }
+  };
+
+  const handleValidateHeat = async (heatNumber: number, roundNumber: number = 1) => {
+    if (!selectedCompId) return;
+    try {
+      await api.resolveHeatDispute(
+        selectedCompId,
+        heatNumber,
+        'VALIDATE',
+        'Results reviewed and validated',
+        roundNumber,
+      );
+      setMessage({ text: `Heat #${heatNumber} validated and confirmed.`, error: false });
+      loadControlRoom(selectedCompId);
+    } catch (err: any) {
+      setMessage({ text: err.message || 'Action failed', error: true });
+    }
+  };
+
+  const handleAdvanceRound = async (currentRound: number) => {
+    if (!selectedCompId) return;
+    try {
+      const res = await api.advanceRound(selectedCompId, currentRound, 2);
+      if (res.isGrandFinal) {
+        setMessage({ text: `🎉 Grand Final created with ${res.totalQualifiers} qualifiers!`, error: false });
+      } else {
+        setMessage({ text: `Advanced to Round ${res.nextRound} (${res.heatsCount} heats created).`, error: false });
+      }
+      loadControlRoom(selectedCompId);
+    } catch (err: any) {
+      setMessage({ text: err.message || 'Round advance failed', error: true });
+    }
+  };
+
+  const handleCompleteTournament = async () => {
+    if (!selectedCompId) return;
+    try {
+      const res = await api.completeCompetition(selectedCompId);
+      setMessage({
+        text: `🏆 Tournament Concluded! Champion: ${res.winner?.username || 'Winner'}. Verifiable certificates ready.`,
+        error: false,
+      });
+      loadControlRoom(selectedCompId);
+    } catch (err: any) {
+      setMessage({ text: err.message || 'Failed to conclude tournament', error: true });
+    }
+  };
+
+  const handleVerifyStudent = async (regId: string, status: 'VERIFIED' | 'REJECTED') => {
+    if (!selectedCompId) return;
+    try {
+      await api.verifyStudentRegistration(selectedCompId, regId, status, `Verified by ${currentUser?.username}`);
+      setMessage({ text: `Student registration marked as ${status}.`, error: false });
+      loadControlRoom(selectedCompId);
+    } catch (err: any) {
+      setMessage({ text: err.message || 'Verification update failed', error: true });
+    }
+  };
+
+  const handleExportRegistrationsCsv = async () => {
+    if (!selectedCompId) return;
+    try {
+      const csvData = await api.exportRegistrationsCsv(selectedCompId);
+      const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `keyrush-registrations-${selectedCompId}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setMessage({ text: 'Participant roster exported to CSV successfully.', error: false });
+    } catch (err: any) {
+      setMessage({ text: err.message || 'Failed to export CSV', error: true });
     }
   };
 
@@ -798,29 +991,54 @@ export default function OrganizerPortalPage() {
         {/* TAB 4.5: LIVE TOURNAMENT CONTROL ROOM */}
         {activeTab === 'control_room' && (
           <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            {/* Control Room Header & Competition Selector */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-panel p-6 rounded-2xl border border-white/10">
               <div>
                 <div className="flex items-center space-x-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
                   <h3 className="text-base font-bold text-text">Live Tournament Control Room</h3>
                   <span className="px-2 py-0.5 rounded-full bg-emerald-400/15 border border-emerald-400/30 text-emerald-300 text-[10px] font-mono font-bold">
-                    ACTIVE MONITOR
+                    60Hz ENGINE SYNC
                   </span>
                 </div>
                 <p className="text-xs text-text-muted mt-1">
-                  Server-authoritative heat synchronization (2–7 racers per heat), dispute intervention, and real-time dispatch.
+                  Server-authoritative heat dispatch (2–7 racers per heat), dispute resolution, and round progression.
                 </p>
               </div>
 
-              <div className="flex items-center space-x-2">
+              <div className="flex flex-wrap items-center gap-3">
+                {competitions.length > 0 && (
+                  <select
+                    value={selectedCompId}
+                    onChange={(e) => {
+                      setSelectedCompId(e.target.value);
+                      loadControlRoom(e.target.value);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-surface border border-white/10 text-xs text-text font-semibold focus:border-amber-400 focus:outline-none"
+                  >
+                    {competitions.map((comp) => (
+                      <option key={comp._id} value={comp._id}>
+                        {comp.title} ({comp.status})
+                      </option>
+                    ))}
+                  </select>
+                )}
+
                 <button
-                  onClick={() => {
-                    setControlRoomMessage('Emergency Director Hold triggered. All live heats paused on server.');
-                  }}
-                  className="px-3 py-2 rounded-xl bg-danger/20 border border-danger/40 text-danger text-xs font-bold hover:bg-danger/30 transition flex items-center space-x-1.5"
+                  onClick={() => loadControlRoom(selectedCompId)}
+                  disabled={isRefreshingControl}
+                  className="px-3 py-2 rounded-xl bg-surface border border-white/10 text-xs text-text hover:bg-surface-light flex items-center space-x-1"
                 >
-                  <ShieldAlert className="h-4 w-4" />
-                  <span>Emergency Halt</span>
+                  <RotateCcw className={`h-3.5 w-3.5 ${isRefreshingControl ? 'animate-spin' : ''}`} />
+                  <span>Refresh</span>
+                </button>
+
+                <button
+                  onClick={handleExportRegistrationsCsv}
+                  className="px-3 py-2 rounded-xl bg-surface border border-white/10 text-xs text-text hover:bg-surface-light flex items-center space-x-1"
+                >
+                  <Printer className="h-3.5 w-3.5 text-accent" />
+                  <span>Export CSV</span>
                 </button>
               </div>
             </div>
@@ -834,57 +1052,132 @@ export default function OrganizerPortalPage() {
               </div>
             )}
 
-            {/* Active Dispute Resolution Banner */}
-            <div className="p-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2 text-rose-400 font-bold text-xs">
-                  <AlertCircle className="h-4 w-4" />
-                  <span>HEAT DISPUTE DETECTED — Heat #3 (Round of 32)</span>
+            {/* Live Telemetry Metric Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="glass-panel p-4 rounded-xl border border-white/5 space-y-1">
+                <span className="text-[10px] font-mono text-text-muted uppercase">Tournament Status</span>
+                <div className="text-base font-bold text-text truncate">
+                  {controlRoomData?.competition?.status || 'INITIALIZED'}
                 </div>
-                <span className="text-[10px] font-mono text-rose-300 bg-rose-500/20 px-2 py-0.5 rounded">
-                  NEEDS ORGANIZER ACTION
-                </span>
               </div>
-              <p className="text-xs text-text-muted">
-                Reason: Racer reported transient WebSocket packet jitter and 230ms synchronization lag. Server auto-flagged heat for review.
-              </p>
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <button
-                  onClick={() => {
-                    setActiveHeats((prev) =>
-                      prev.map((h) =>
-                        h.id === 'HEAT-03' ? { ...h, status: 'RACING', progress: 0, disputeReason: undefined } : h
-                      )
-                    );
-                    setControlRoomMessage('Heat #3 has been force rerun. Racers notified to reconnect.');
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-amber-400 text-black font-bold text-xs hover:bg-amber-300 flex items-center space-x-1"
+              <div className="glass-panel p-4 rounded-xl border border-white/5 space-y-1">
+                <span className="text-[10px] font-mono text-text-muted uppercase">Active Round</span>
+                <div className="text-base font-bold text-accent">
+                  Round {controlRoomData?.currentRound || 1}
+                </div>
+              </div>
+              <div className="glass-panel p-4 rounded-xl border border-white/5 space-y-1">
+                <span className="text-[10px] font-mono text-text-muted uppercase">Completed Heats</span>
+                <div className="text-base font-bold text-emerald-400">
+                  {controlRoomData?.completedHeats || 0} / {controlRoomData?.totalHeatsInRound || activeHeats.length}
+                </div>
+              </div>
+              <div className="glass-panel p-4 rounded-xl border border-white/5 space-y-1">
+                <span className="text-[10px] font-mono text-text-muted uppercase">Disputes Pending</span>
+                <div className={`text-base font-bold ${controlRoomData?.disputedHeats ? 'text-danger' : 'text-text'}`}>
+                  {controlRoomData?.disputedHeats || 0}
+                </div>
+              </div>
+            </div>
+
+            {/* Heat Dispatch & Seeding Control Bar */}
+            <div className="glass-panel p-4 rounded-xl border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center space-x-3">
+                <span className="text-xs font-bold text-text">Seeding Algorithm:</span>
+                <select
+                  value={seedingSelection}
+                  onChange={(e) => setSeedingSelection(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none"
                 >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  <span>Force Heat Rerun</span>
+                  <option value="INSTITUTION_BALANCED">Institution-Balanced (Round 1 Peer Separation)</option>
+                  <option value="RANKED_ELO">Ranked ELO (Snake Draft Balancing)</option>
+                  <option value="RANDOM">Randomized Draw</option>
+                </select>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={async () => {
+                    if (!selectedCompId) return;
+                    try {
+                      await api.generateHeats(selectedCompId, seedingSelection);
+                      setMessage({ text: 'Heats generated successfully with balanced 2–7 racer sizing!', error: false });
+                      loadControlRoom(selectedCompId);
+                    } catch (err: any) {
+                      setMessage({ text: err.message || 'Failed to generate heats', error: true });
+                    }
+                  }}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-black font-bold text-xs hover:opacity-95 shadow-md flex items-center space-x-1.5"
+                >
+                  <Flame className="h-4 w-4" />
+                  <span>Generate / Re-seed Heats</span>
                 </button>
+
+                {controlRoomData?.canAdvanceRound && (
+                  <button
+                    onClick={() => handleAdvanceRound(controlRoomData.currentRound || 1)}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-accent text-white font-bold text-xs hover:opacity-95 shadow-md flex items-center space-x-1.5 animate-pulse"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                    <span>Advance to Next Round / Grand Final</span>
+                  </button>
+                )}
+
                 <button
-                  onClick={() => {
-                    setActiveHeats((prev) =>
-                      prev.map((h) =>
-                        h.id === 'HEAT-03' ? { ...h, status: 'COMPLETED', disputeReason: undefined } : h
-                      )
-                    );
-                    setControlRoomMessage('Dispute dismissed. Heat #3 confirmed and bracket updated.');
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-surface border border-white/10 text-xs font-semibold text-text hover:bg-surface-light flex items-center space-x-1"
+                  onClick={handleCompleteTournament}
+                  className="px-3 py-2 rounded-xl bg-surface border border-white/10 text-xs font-semibold text-text hover:bg-surface-light flex items-center space-x-1"
                 >
-                  <Check className="h-3.5 w-3.5 text-emerald-400" />
-                  <span>Validate & Dismiss</span>
+                  <Trophy className="h-3.5 w-3.5 text-amber-400" />
+                  <span>Crown Champion</span>
                 </button>
               </div>
             </div>
+
+            {/* Active Dispute Resolution Banner */}
+            {activeHeats.some((h) => h.hasDispute || h.status === 'DISPUTED') && (
+              <div className="p-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2 text-rose-400 font-bold text-xs">
+                    <AlertCircle className="h-4 w-4" />
+                    <span>HEAT DISPUTE REQUIRES INTERVENTION</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-rose-300 bg-rose-500/20 px-2 py-0.5 rounded">
+                    URGENT
+                  </span>
+                </div>
+                <p className="text-xs text-text-muted">
+                  A heat has been flagged for telemetry anomaly or player disconnect dispute. Review and resolve below.
+                </p>
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {activeHeats
+                    .filter((h) => h.hasDispute || h.status === 'DISPUTED')
+                    .map((dh) => (
+                      <div key={dh.id} className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handleForceRerun(dh.heatNumber, dh.roundNumber)}
+                          className="px-3 py-1.5 rounded-lg bg-amber-400 text-black font-bold text-xs hover:bg-amber-300 flex items-center space-x-1"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                          <span>Rerun {dh.id}</span>
+                        </button>
+                        <button
+                          onClick={() => handleValidateHeat(dh.heatNumber, dh.roundNumber)}
+                          className="px-3 py-1.5 rounded-lg bg-surface border border-white/10 text-xs font-semibold text-text hover:bg-surface-light flex items-center space-x-1"
+                        >
+                          <Check className="h-3.5 w-3.5 text-emerald-400" />
+                          <span>Validate {dh.id}</span>
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
 
             {/* Active Heats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {activeHeats.map((heat) => (
                 <div
-                  key={heat.id}
+                  key={heat.id || heat.heatNumber}
                   className="glass-panel p-5 rounded-2xl border border-white/10 space-y-4 hover:border-amber-400/30 transition-all"
                 >
                   <div className="flex items-center justify-between">
@@ -913,38 +1206,154 @@ export default function OrganizerPortalPage() {
                       <span className="text-text font-bold">{heat.racersCount} of 7 (Compliant Sizing)</span>
                     </div>
                     <div className="flex justify-between text-xs font-mono">
-                      <span className="text-text-muted">Pacesetter:</span>
-                      <span className="text-amber-300 font-bold">
-                        {heat.leader} {heat.leaderWpm > 0 ? `(${heat.leaderWpm} WPM)` : ''}
+                      <span className="text-text-muted">Room ID:</span>
+                      <span className="text-amber-300 font-bold truncate max-w-[180px]">
+                        {heat.roomId || 'ROOM-PENDING'}
                       </span>
                     </div>
                   </div>
 
-                  {/* Progress bar */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[10px] font-mono text-text-muted">
-                      <span>Heat Progress</span>
-                      <span>{heat.progress}%</span>
-                    </div>
-                    <div className="w-full h-2 rounded-full bg-surface-dark border border-white/5 overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-amber-400 to-cyan-400 rounded-full transition-all duration-300"
-                        style={{ width: `${heat.progress}%` }}
-                      />
-                    </div>
+                  {/* Participants summary */}
+                  <div className="space-y-1 pt-1 border-t border-white/5 text-xs font-mono">
+                    {heat.participants?.slice(0, 4).map((p: any, idx: number) => (
+                      <div key={idx} className="flex justify-between text-[11px] text-text-muted">
+                        <span>L{idx + 1}: {p.username || 'Racer'}</span>
+                        <span>{p.netWpm > 0 ? `${p.netWpm} WPM` : p.finishPosition > 0 ? `P${p.finishPosition}` : 'Ready'}</span>
+                      </div>
+                    ))}
+                    {(heat.participants?.length || 0) > 4 && (
+                      <div className="text-[10px] text-text-dim text-right">
+                        +{heat.participants.length - 4} more racers
+                      </div>
+                    )}
                   </div>
 
                   <div className="pt-2 border-t border-white/5 flex items-center justify-between text-xs">
-                    <span className="text-[10px] font-mono text-text-muted">Server Tick: 60Hz</span>
-                    <button
-                      onClick={() => setControlRoomMessage(`Spectator feed connected to ${heat.id}`)}
-                      className="text-accent hover:underline text-xs font-semibold"
+                    {heat.status !== 'COMPLETED' && heat.status !== 'RACING' ? (
+                      <button
+                        onClick={() => handleDispatchHeat(heat.heatNumber, heat.roundNumber)}
+                        className="px-3 py-1 rounded-lg bg-gradient-to-r from-emerald-500 to-accent text-white font-bold text-xs hover:opacity-95 flex items-center space-x-1"
+                      >
+                        <Play className="h-3 w-3" />
+                        <span>Dispatch / Start Heat</span>
+                      </button>
+                    ) : (
+                      <span className="text-[10px] font-mono text-text-muted">Server Tick: 60Hz</span>
+                    )}
+
+                    <Link
+                      href={`/multiplayer?room=${heat.roomId}&spectator=true`}
+                      className="text-accent hover:underline text-xs font-semibold flex items-center space-x-1"
                     >
-                      Spectate Heat Camera &rarr;
-                    </button>
+                      <span>Spectate Heat Camera</span>
+                      <ExternalLink className="h-3 w-3" />
+                    </Link>
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* Student Athlete Participant Verification Section */}
+            <div className="glass-panel p-6 rounded-2xl border border-white/10 space-y-4 mt-8">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-base font-bold text-text">Participant Verification & Roster</h3>
+                  <p className="text-xs text-text-muted">
+                    Verify academic identity and check-in status for official tournament seeding.
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <select
+                    value={controlRoomFilter}
+                    onChange={(e) => setControlRoomFilter(e.target.value as any)}
+                    className="px-3 py-1.5 rounded-lg bg-surface border border-white/10 text-xs text-text focus:border-amber-400 focus:outline-none"
+                  >
+                    <option value="ALL">All ({compRegistrations.length})</option>
+                    <option value="PENDING">Pending Verification</option>
+                    <option value="VERIFIED">Verified Only</option>
+                    <option value="REJECTED">Rejected</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs font-mono">
+                  <thead>
+                    <tr className="border-b border-white/10 text-text-muted">
+                      <th className="py-2.5 px-3">Reg ID</th>
+                      <th className="py-2.5 px-3">Racer Name</th>
+                      <th className="py-2.5 px-3">Institution</th>
+                      <th className="py-2.5 px-3">Student ID</th>
+                      <th className="py-2.5 px-3">Check-In</th>
+                      <th className="py-2.5 px-3">Verification</th>
+                      <th className="py-2.5 px-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {compRegistrations
+                      .filter((r) =>
+                        controlRoomFilter === 'ALL'
+                          ? true
+                          : r.verificationStatus === controlRoomFilter,
+                      )
+                      .map((reg) => (
+                        <tr key={reg._id} className="hover:bg-white/5 transition-colors">
+                          <td className="py-2.5 px-3 font-bold text-accent">{reg.registrationId}</td>
+                          <td className="py-2.5 px-3 text-text font-sans font-semibold">
+                            {reg.fullName || reg.username}
+                          </td>
+                          <td className="py-2.5 px-3 text-text-muted truncate max-w-[150px]">
+                            {reg.institutionName || 'University Racer'}
+                          </td>
+                          <td className="py-2.5 px-3 text-text-muted">{reg.studentId || 'N/A'}</td>
+                          <td className="py-2.5 px-3">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                reg.checkInStatus === 'CHECKED_IN'
+                                  ? 'bg-cyan-400/20 text-cyan-300'
+                                  : 'bg-white/5 text-text-muted'
+                              }`}
+                            >
+                              {reg.checkInStatus}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                reg.verificationStatus === 'VERIFIED'
+                                  ? 'bg-emerald-400/20 text-emerald-400'
+                                  : reg.verificationStatus === 'REJECTED'
+                                  ? 'bg-danger/20 text-danger'
+                                  : 'bg-amber-400/20 text-amber-300'
+                              }`}
+                            >
+                              {reg.verificationStatus}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right space-x-1.5">
+                            {reg.verificationStatus !== 'VERIFIED' && (
+                              <button
+                                onClick={() => handleVerifyStudent(reg._id, 'VERIFIED')}
+                                className="px-2 py-1 rounded bg-emerald-400/20 text-emerald-400 hover:bg-emerald-400/30 text-[10px] font-bold"
+                              >
+                                Verify
+                              </button>
+                            )}
+                            {reg.verificationStatus !== 'REJECTED' && (
+                              <button
+                                onClick={() => handleVerifyStudent(reg._id, 'REJECTED')}
+                                className="px-2 py-1 rounded bg-danger/20 text-danger hover:bg-danger/30 text-[10px] font-bold"
+                              >
+                                Reject
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
